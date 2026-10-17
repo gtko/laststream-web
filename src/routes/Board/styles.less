@@ -28,11 +28,90 @@
             padding: 0 1rem;
             overflow-y: auto;
 
+            .board-sections {
+                display: flex;
+                flex-direction: column;
+                min-width: 0;
+                margin: 0 -1rem;
+                padding-bottom: 2rem;
+
+                .board-row {
+                    margin-left: 1rem;
+                    margin-right: 1rem;
+                }
+            }
+
             .board-row {
                 margin-top: 1rem;
                 margin-bottom: 2rem;
             }
         }
+    }
+
+    .cta-card {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+        max-width: 640px;
+        margin: 2rem 1rem 0;
+        padding: 24px;
+        border-radius: 16px;
+        background: rgba(23, 21, 31, 0.9);
+        color: var(--primary-foreground-color);
+    }
+
+    .cta-title {
+        margin: 0;
+        font-size: 22px;
+        font-weight: 800;
+    }
+
+    .cta-text {
+        margin: 0;
+        font-size: 15px;
+        line-height: 1.5;
+        color: rgba(228, 224, 236, 0.9);
+    }
+
+    .cta-button {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+        padding: 10px 22px;
+        border-radius: 10px;
+        font-weight: 700;
+        background: var(--primary-accent-color);
+        color: var(--primary-accent-foreground-color);
+    }
+
+    .service-tile {
+        position: relative;
+        flex: 0 0 240px;
+        height: 136px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 14px;
+        overflow: hidden;
+        background-color: var(--service-color, #17151f);
+        background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.18));
+        transition: transform 0.2s;
+    }
+
+    .service-tile:hover,
+    .service-tile:focus-visible {
+        transform: scale(1.04);
+        outline: 3px solid var(--primary-accent-color);
+        outline-offset: 2px;
+    }
+
+    .service-name {
+        font-size: 22px;
+        font-weight: 800;
+        color: #fff;
+        text-align: center;
+        padding: 0 12px;
     }
 
     .board-warning-container {

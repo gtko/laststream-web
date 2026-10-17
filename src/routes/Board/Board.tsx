@@ -1,43 +1,45 @@
-// Copyright (C) 2017-2023 Smart code 203358507
+// Copyright (C) 2017-2026 Smart code 203358507
 
-const React = require('react');
-const classnames = require('classnames');
-const useTranslate = require('stremio/common/useTranslate');
-const { default: useVisibleCatalogs } = require('stremio/common/useVisibleCatalogs');
-const { useStreamingServer, useNotifications, withCoreSuspender, useProfile } = require('stremio/common');
-const { ContinueWatchingItem, EventModal, LiveTvContinueWatchingItem, MainNavBars, MetaItem, MetaRow } = require('stremio/components');
-const useBoard = require('./useBoard');
-const useContinueWatchingPreview = require('./useContinueWatchingPreview');
-const { default: useLiveTvContinueWatching } = require('./useLiveTvContinueWatching');
-const styles = require('./styles');
-const { default: StreamingServerWarning } = require('./StreamingServerWarning');
+import React, { useMemo } from 'react';
+import classnames from 'classnames';
+import useTranslate from 'stremio/common/useTranslate';
+import useVisibleCatalogs from 'stremio/common/useVisibleCatalogs';
+import { useLastAddon } from 'stremio/common/lastAddon';
+import { useStreamingServer, useNotifications, withCoreSuspender, useProfile } from 'stremio/common';
+import { EventModal, LiveTvContinueWatchingItem, MainNavBars, MetaItem, MetaRow } from 'stremio/components';
+import useBoard from './useBoard';
+import useLiveTvContinueWatching from './useLiveTvContinueWatching';
+import { HomeRows } from './HomeRows';
+import StreamingServerWarning from './StreamingServerWarning';
+import styles from './styles.less';
 
 const THRESHOLD = 5;
+const EMPTY_CATALOGS: never[] = [];
 
 const Board = () => {
     const t = useTranslate();
+    const { configured } = useLastAddon();
     const streamingServer = useStreamingServer();
-    const continueWatchingPreview = useContinueWatchingPreview();
     const liveTvContinueWatching = useLiveTvContinueWatching();
     const [board, loadBoardRows] = useBoard();
     const notifications = useNotifications();
     const profile = useProfile();
-    const liveTvCatalog = React.useMemo(() => ({
+    const liveTvCatalog = useMemo(() => ({
         items: (Array.isArray(liveTvContinueWatching.items) ? liveTvContinueWatching.items : [])
             .map((item) => ({ ...item, posterShape: 'landscape' })),
     }), [liveTvContinueWatching.items]);
-    const boardCatalogsOffset =
-        (continueWatchingPreview.items.length > 0 ? 1 : 0) +
-        (liveTvCatalog.items.length > 0 ? 1 : 0);
-    const showStreamingServerWarning = React.useMemo(() => {
+    const showStreamingServerWarning = useMemo(() => {
+        const dismissedAt = profile.settings.streamingServerWarningDismissed;
         return streamingServer.settings !== null && streamingServer.settings.type === 'Err' && (
-            isNaN(profile.settings.streamingServerWarningDismissed.getTime()) ||
-            profile.settings.streamingServerWarningDismissed.getTime() < Date.now());
+            dismissedAt === null ||
+            isNaN(dismissedAt.getTime()) ||
+            dismissedAt.getTime() < Date.now());
     }, [profile.settings, streamingServer.settings]);
+    // Les rangées de l’accueil forment un seul enfant du conteneur de défilement, suivi des catalogues addons.
     const { catalogRows, scrollContainerRef, onScroll } = useVisibleCatalogs({
-        catalogs: board.catalogs,
+        catalogs: board.catalogs ?? EMPTY_CATALOGS,
         loadRange: loadBoardRows,
-        leadingRows: boardCatalogsOffset,
+        leadingRows: 1,
         preloadRows: THRESHOLD,
     });
     return (
@@ -45,30 +47,21 @@ const Board = () => {
             <EventModal />
             <MainNavBars className={styles['board-content-container']} route={'board'}>
                 <div ref={scrollContainerRef} className={styles['board-content']} onScroll={onScroll}>
-                    {
-                        continueWatchingPreview.items.length > 0 ?
-                            <MetaRow
-                                className={classnames(styles['board-row'], styles['continue-watching-row'], 'animation-fade-in')}
-                                title={t.string('BOARD_CONTINUE_WATCHING')}
-                                catalog={continueWatchingPreview}
-                                itemComponent={ContinueWatchingItem}
-                                notifications={notifications}
-                            />
-                            :
-                            null
-                    }
-                    {
-                        liveTvCatalog.items.length > 0 ?
-                            <MetaRow
-                                className={classnames(styles['board-row'], styles['board-row-landscape'], 'animation-fade-in')}
-                                title={t.string('BOARD_CONTINUE_WATCHING_LIVE')}
-                                catalog={liveTvCatalog}
-                                itemComponent={LiveTvContinueWatchingItem}
-                                notifications={notifications}
-                            />
-                            :
-                            null
-                    }
+                    <div className={styles['board-sections']}>
+                        <HomeRows configured={configured} />
+                        {
+                            liveTvCatalog.items.length > 0 ?
+                                <MetaRow
+                                    className={classnames(styles['board-row'], styles['board-row-landscape'], 'animation-fade-in')}
+                                    title={t.string('BOARD_CONTINUE_WATCHING_LIVE')}
+                                    catalog={liveTvCatalog}
+                                    itemComponent={LiveTvContinueWatchingItem}
+                                    notifications={notifications}
+                                />
+                                :
+                                null
+                        }
+                    </div>
                     {catalogRows.map(({ catalog, index }) => {
                         switch (catalog.content?.type) {
                             case 'Ready': {
@@ -124,4 +117,4 @@ const BoardFallback = () => (
     </div>
 );
 
-module.exports = withCoreSuspender(Board, BoardFallback);
+export default withCoreSuspender(Board, BoardFallback);

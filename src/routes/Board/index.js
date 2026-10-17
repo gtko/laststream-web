@@ -1,5 +1,5 @@
-// Copyright (C) 2017-2023 Smart code 203358507
+// Copyright (C) 2017-2026 Smart code 203358507
 
-const Board = require('./Board');
+const { default: Board } = require('./Board');
 
 module.exports = Board;
