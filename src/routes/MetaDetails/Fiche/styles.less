@@ -714,14 +714,29 @@
 
 .poster-link {
     display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
     border-radius: 12px;
+    background: none;
     color: inherit;
+    font: inherit;
+    text-align: inherit;
     text-decoration: none;
+    cursor: pointer;
     transition: transform 0.2s;
+
+    &:disabled {
+        cursor: default;
+    }
 
     &:hover,
     &:focus-visible {
         transform: scale(1.05);
+    }
+
+    &:disabled:hover {
+        transform: none;
     }
 
     &:focus-visible {

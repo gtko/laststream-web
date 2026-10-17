@@ -62,7 +62,7 @@ const PersonView = ({ person, films, language }: PersonViewProps) => {
         [films],
     );
     const knownNames = useMemo(() => known.slice(0, 8).map((film) => film.name), [known]);
-    const why = usePersonWhy(person.name, knownNames, knownNames.length > 0);
+    const why = usePersonWhy(person.id, person.name, knownNames, knownNames.length > 0);
 
     const birthYear = person.birthday ? Number(person.birthday.slice(0, 4)) : 1880;
     const currentYear = new Date().getFullYear();

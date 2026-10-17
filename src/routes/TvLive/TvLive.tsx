@@ -209,6 +209,9 @@ const TvLive = () => {
         ? programsOf(selectedChannel).find((program) => program.start === selection.start) ?? null
         : null;
 
+    // Reprise : l'entrée fraîche (signature à jour) si la chaîne existe encore, sinon celle enregistrée.
+    const freshChannel = (last: LastChannel): TvChannel => channels.find((channel) => channel.id === last.id && channel.source === last.source) ?? last;
+
     const openPlayer = useCallback((channel: TvChannel) => {
         const index = visible.findIndex((candidate) => candidate.id === channel.id);
         setPlaying(index >= 0 ? { list: visible, index } : { list: [channel], index: 0 });
@@ -411,7 +414,7 @@ const TvLive = () => {
                             <div className={styles['tv-head-actions']}>
                                 {
                                     lastChannel ?
-                                        <Button className={styles['primary-button']} onClick={() => setPlaying({ list: [lastChannel], index: 0 })}>
+                                        <Button className={styles['primary-button']} onClick={() => setPlaying({ list: [freshChannel(lastChannel)], index: 0 })}>
                                             <Icon name={'play'} />
                                             <span>{t('TV_RESUME_LAST', { defaultValue: 'Reprendre la dernière chaîne' })}</span>
                                         </Button>

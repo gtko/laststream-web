@@ -106,16 +106,34 @@ export type RecommendResponse = {
     items: RecommendItem[];
 };
 
-export type WhyRequest = {
+// Textes IA : le corps envoyé au serveur ne contient que {type, tmdbId, language} ; le serveur lit le contenu sur TMDB.
+// `legacy` (anciens champs titre/synopsis, nom/titres) n'est joint au corps qu'en DEV_PROTOTYPE_MODE.
+export type AiTextContract = {
+    type: string;
+    tmdbId: number;
+    language: string;
+};
+
+export type LegacyWhyFields = {
     title: string;
     year?: string | number;
     overview?: string;
     genres?: string[];
 };
 
-export type PersonWhyRequest = {
+export type LegacyPersonWhyFields = {
     name: string;
     knownFor: string[];
+};
+
+export type WhyRequest = AiTextContract & {
+    type: 'movie' | 'tv';
+    legacy?: LegacyWhyFields;
+};
+
+export type PersonWhyRequest = AiTextContract & {
+    type: 'person';
+    legacy?: LegacyPersonWhyFields;
 };
 
 export type TextResponse = {
@@ -132,6 +150,8 @@ export type TvChannel = {
     source: string;
     fast: boolean;
     url: string;
+    // Signature du proxy HLS (paramètre `s`), renvoyée par tv/channels et tv/import. Null : flux non signé, donc non jouable.
+    sig: string | null;
     epgId: string;
     flaky: boolean;
 };

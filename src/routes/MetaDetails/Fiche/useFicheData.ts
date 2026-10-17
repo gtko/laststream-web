@@ -1,8 +1,9 @@
 // Copyright (C) 2017-2026 Smart code 203358507
 
 import { useEffect, useState } from 'react';
-import { findByExternalId, mdblist, tmdb, why } from 'stremio/common/lastAddon';
+import { aiLanguage, findByExternalId, mdblist, tmdb, why } from 'stremio/common/lastAddon';
 import type { MdblistRatings } from 'stremio/common/lastAddon';
+import useProfile from 'stremio/common/useProfile';
 import { buildCollection, buildFicheTmdb, buildProviders } from './model';
 import type { TmdbCollection, TmdbDetails, TmdbWatchProviders } from './model';
 import type { FicheCollection, FicheMeta, FicheProviders, FicheTmdb, TmdbKind } from './types';
@@ -33,6 +34,8 @@ export const imdbIdOf = (id: string): string | null => (IMDB_ID.test(id) ? id : 
 const useFicheData = (meta: FicheMeta): FicheData => {
     const imdbId = imdbIdOf(meta.id);
     const { name, description } = meta;
+    const profile = useProfile();
+    const language = aiLanguage(profile.settings?.interfaceLanguage);
     const [data, setData] = useState<FicheData>(imdbId === null ? UNAVAILABLE : LOADING);
 
     useEffect(() => {
@@ -59,7 +62,6 @@ const useFicheData = (meta: FicheMeta): FicheData => {
             const raw = await tmdb<TmdbDetails>(`${kind}/${found.tmdbId}`, {
                 append_to_response: DETAIL_APPEND[kind],
                 include_image_language: 'fr,en,null',
-                include_video_language: 'fr,en,null',
             }).catch(() => null);
             if (!active) return;
             if (raw === null) {
@@ -83,10 +85,15 @@ const useFicheData = (meta: FicheMeta): FicheData => {
                 });
 
             void why({
-                title: name,
-                year: model.year,
-                overview: model.overview || description || '',
-                genres: model.genres,
+                type: kind,
+                tmdbId: found.tmdbId,
+                language,
+                legacy: {
+                    title: name,
+                    year: model.year,
+                    overview: model.overview || description || '',
+                    genres: model.genres,
+                },
             })
                 .then((response) => patch({ why: response.text ?? '' }))
                 .catch(() => {
@@ -109,7 +116,7 @@ const useFicheData = (meta: FicheMeta): FicheData => {
         return () => {
             active = false;
         };
-    }, [imdbId, name, description]);
+    }, [imdbId, name, description, language]);
 
     return data;
 };

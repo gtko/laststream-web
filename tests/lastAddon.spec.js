@@ -313,3 +313,177 @@ describe('getLaststream', () => {
         expect(api.getLaststream({ laststream: { ...valid, estBitrateKbps: undefined } })).toBeNull();
     });
 });
+
+const SIG = 'SIG_abc-_9';
+
+describe('hlsUrl', () => {
+    it('builds the signed proxy URL exactly as returned: u then s', () => {
+        const api = loadLastAddon();
+        api.setBase(BASE);
+        api.setConfig(CONFIG);
+
+        expect(api.hlsUrl('https://x.test/a.m3u8', SIG))
+            .toBe(`${BASE}/${CONFIG}/lt/tv/hls?u=https%3A%2F%2Fx.test%2Fa.m3u8&s=${SIG}`);
+    });
+
+    it('never builds an unsigned URL: no signature gives null and no request', () => {
+        const api = loadLastAddon();
+        api.setBase(BASE);
+        api.setConfig(CONFIG);
+
+        expect(api.hlsUrl('https://x.test/a.m3u8', null)).toBeNull();
+        expect(api.hlsUrl('https://x.test/a.m3u8', undefined)).toBeNull();
+        expect(api.hlsUrl('https://x.test/a.m3u8', '')).toBeNull();
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+});
+
+describe('tmdb parameter sanitizer', () => {
+    beforeEach(() => {
+        jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    });
+
+    it('keeps whitelisted parameters and drops the others', () => {
+        const api = loadLastAddon();
+        const kept = api.sanitizeTmdbParams({
+            language: 'fr-FR',
+            'primary_release_date.gte': '2020-01-01',
+            include_adult: 'false',
+            external_source: 'imdb_id',
+            include_video_language: 'fr,en,null',
+            with_release_type: '2|3',
+        });
+
+        expect(kept).toEqual({
+            language: 'fr-FR',
+            'primary_release_date.gte': '2020-01-01',
+            include_adult: 'false',
+        });
+    });
+
+    it('sends only whitelisted parameters through tmdb()', async () => {
+        const api = loadLastAddon();
+        api.setBase(BASE);
+        api.setConfig(CONFIG);
+        fetchMock.mockResolvedValue(jsonResponse({ results: [] }));
+
+        await api.tmdb('discover/movie', { sort_by: 'popularity.desc', include_video_language: 'fr' });
+        const [url] = fetchMock.mock.calls[0];
+        expect(url).toBe(`${BASE}/${CONFIG}/lt/tmdb/discover/movie?sort_by=popularity.desc`);
+    });
+
+    it('warns once per dropped parameter in dev, and stays silent in production', () => {
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const api = loadLastAddon();
+
+        api.sanitizeTmdbParams({ external_source: 'imdb_id' });
+        api.sanitizeTmdbParams({ external_source: 'imdb_id' });
+        expect(warn).toHaveBeenCalledTimes(1);
+
+        const previous = process.env.NODE_ENV;
+        process.env.NODE_ENV = 'production';
+        try {
+            api.sanitizeTmdbParams({ other_param: 'x' });
+            expect(warn).toHaveBeenCalledTimes(1);
+        } finally {
+            process.env.NODE_ENV = previous;
+        }
+    });
+});
+
+describe('AI texts', () => {
+    beforeEach(() => {
+        jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    });
+
+    it('why sends only {type, tmdbId, language} in normal mode', async () => {
+        const api = loadLastAddon();
+        api.setBase(BASE);
+        api.setConfig(CONFIG);
+        fetchMock.mockResolvedValue(jsonResponse({ text: 'Pour toi.' }));
+
+        await expect(api.why({
+            type: 'movie',
+            tmdbId: 550,
+            language: 'fr',
+            legacy: { title: 'Fight Club', overview: 'Un homme…', genres: ['Drame'] },
+        })).resolves.toEqual({ text: 'Pour toi.' });
+
+        const [url, init] = fetchMock.mock.calls[0];
+        expect(url).toBe(`${BASE}/${CONFIG}/lt/why`);
+        expect(init.method).toBe('POST');
+        expect(JSON.parse(init.body)).toEqual({ type: 'movie', tmdbId: 550, language: 'fr' });
+    });
+
+    it('personWhy sends only {type, tmdbId, language} in normal mode', async () => {
+        const api = loadLastAddon();
+        api.setBase(BASE);
+        api.setConfig(CONFIG);
+        fetchMock.mockResolvedValue(jsonResponse({ text: 'Acteur.' }));
+
+        await api.personWhy({ type: 'person', tmdbId: 287, language: 'en', legacy: { name: 'Brad Pitt', knownFor: ['Fight Club'] } });
+
+        const [url, init] = fetchMock.mock.calls[0];
+        expect(url).toBe(`${BASE}/${CONFIG}/lt/person-why`);
+        expect(JSON.parse(init.body)).toEqual({ type: 'person', tmdbId: 287, language: 'en' });
+    });
+
+    it('keeps the legacy body in DEV_PROTOTYPE_MODE', async () => {
+        localStorage.setItem(DEV_KEY, '1');
+        const api = loadLastAddon();
+        fetchMock.mockResolvedValue(jsonResponse({ text: 'Proto.' }));
+
+        await api.why({ type: 'tv', tmdbId: 1399, language: 'fr', legacy: { title: 'Game of Thrones', year: 2011 } });
+
+        const [url, init] = fetchMock.mock.calls[0];
+        expect(url).toBe('http://localhost:8089/api/why');
+        expect(JSON.parse(init.body)).toEqual({ type: 'tv', tmdbId: 1399, language: 'fr', title: 'Game of Thrones', year: 2011 });
+    });
+
+    it('aiLanguage takes the short code of the interface language, then of the browser', () => {
+        const api = loadLastAddon();
+        setGlobal('navigator', { language: 'de-DE' });
+
+        expect(api.aiLanguage('pt-BR')).toBe('pt');
+        expect(api.aiLanguage('')).toBe('de');
+        expect(api.aiLanguage(undefined)).toBe('de');
+        setGlobal('navigator', undefined);
+        expect(api.aiLanguage(undefined)).toBe('fr');
+    });
+});
+
+describe('transport limits', () => {
+    const flush = () => new Promise((resolve) => { setTimeout(resolve, 0); });
+
+    it('keeps at most 6 requests in flight and starts the next one when a slot frees', async () => {
+        const api = loadLastAddon();
+        api.setBase(BASE);
+        api.setConfig(CONFIG);
+        const settle = [];
+        fetchMock.mockImplementation(() => new Promise((resolve) => { settle.push(resolve); }));
+
+        for (let index = 0; index < 10; index += 1) {
+            api.mdblist('movie', `tt${index}`);
+        }
+        await flush();
+        expect(fetchMock).toHaveBeenCalledTimes(6);
+
+        settle[0](jsonResponse({ ratings: {}, score: 1 }));
+        await flush();
+        expect(fetchMock).toHaveBeenCalledTimes(7);
+    });
+
+    it('floors the cache lifetime at 5 minutes', async () => {
+        const api = loadLastAddon();
+        const load = jest.fn(async () => 'value');
+
+        await api.cachedRequest('short-ttl', load, 1000);
+        clock += 4 * 60 * 1000;
+        await api.cachedRequest('short-ttl', load, 1000);
+        expect(load).toHaveBeenCalledTimes(1);
+
+        clock += 60 * 1000 + 1;
+        await api.cachedRequest('short-ttl', load, 1000);
+        expect(load).toHaveBeenCalledTimes(2);
+    });
+});

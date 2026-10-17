@@ -40,16 +40,17 @@ export const readFavorites = (): string[] => {
 
 export const writeFavorites = (ids: string[]): void => writeJson(FAVORITES_KEY, ids);
 
-export type LastChannel = Pick<TvChannel, 'id' | 'name' | 'logo' | 'group' | 'cat' | 'source' | 'fast' | 'url' | 'epgId' | 'flaky'>;
+export type LastChannel = Pick<TvChannel, 'id' | 'name' | 'logo' | 'group' | 'cat' | 'source' | 'fast' | 'url' | 'sig' | 'epgId' | 'flaky'>;
 
+// `sig` peut manquer dans une entrée enregistrée avant le durcissement : le lecteur la traite alors comme non jouable.
 export const readLastChannel = (): LastChannel | null => {
     const value = readJson<LastChannel | null>(LAST_CHANNEL_KEY, null);
     return value && typeof value.id === 'string' && typeof value.url === 'string' ? value : null;
 };
 
 export const writeLastChannel = (channel: TvChannel): void => {
-    const { id, name, logo, group, cat, source, fast, url, epgId, flaky } = channel;
-    writeJson(LAST_CHANNEL_KEY, { id, name, logo, group, cat, source, fast, url, epgId, flaky });
+    const { id, name, logo, group, cat, source, fast, url, sig, epgId, flaky } = channel;
+    writeJson(LAST_CHANNEL_KEY, { id, name, logo, group, cat, source, fast, url, sig, epgId, flaky });
 };
 
 /** Configuration de la playlist personnelle (même forme que la requête d'import LastAddon). */

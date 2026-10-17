@@ -1,55 +1,62 @@
 // Copyright (C) 2017-2026 Smart code 203358507
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import classNames from 'classnames';
+import { useNavigate } from 'react-router';
 import { imdbFromTmdb } from 'stremio/common/lastAddon';
 import Section from './Section';
-import type { FicheTmdbPoster, TmdbKind } from './types';
+import type { FicheTmdbPoster } from './types';
 import styles from './styles.less';
 
-// Les titres TMDB n'ont pas d'identifiant IMDb dans leur réponse : on le demande pour chaque affiche
-// (mis en cache côté LastAddon). Sans identifiant, l'affiche reste visible sans lien.
-const useImdbId = (kind: TmdbKind, tmdbId: number): string | null => {
-    const [imdbId, setImdbId] = useState<string | null>(null);
+type Status = 'idle' | 'loading' | 'missing';
 
-    useEffect(() => {
-        let active = true;
-        imdbFromTmdb(kind, tmdbId)
-            .then((id) => {
-                if (active) setImdbId(id);
-            })
-            .catch(() => {
-                // Affiche sans lien.
-            });
-        return () => {
-            active = false;
-        };
-    }, [kind, tmdbId]);
-
-    return imdbId;
-};
-
+// Les titres TMDB n'ont pas d'identifiant IMDb dans leur réponse. Il n'est demandé qu'au survol, au focus ou au clic
+// (mis en cache côté LastAddon), jamais pour toutes les affiches de la rangée à l'ouverture de la fiche.
 const PosterTile = ({ item }: { item: FicheTmdbPoster }) => {
-    const imdbId = useImdbId(item.kind, item.tmdbId);
-    const content = (
-        <>
-            <span className={classNames(styles['poster'], item.poster === '' && styles['no-image'])}>
-                {item.poster !== '' && <img src={item.poster} alt="" loading="lazy" decoding="async" />}
-            </span>
-            <span className={styles['poster-title']}>{item.title}</span>
-            {item.year !== '' && <span className={styles['poster-year']}>{item.year}</span>}
-        </>
-    );
+    const navigate = useNavigate();
+    const [imdbId, setImdbId] = useState<string | null>(null);
+    const [status, setStatus] = useState<Status>('idle');
+
+    const resolve = async (): Promise<string | null> => {
+        if (imdbId !== null) return imdbId;
+        setStatus('loading');
+        try {
+            const id = await imdbFromTmdb(item.kind, item.tmdbId);
+            setImdbId(id);
+            setStatus(id === null ? 'missing' : 'idle');
+            return id;
+        } catch {
+            setStatus('idle');
+            return null;
+        }
+    };
+
+    const prefetch = () => {
+        if (imdbId === null && status === 'idle') void resolve();
+    };
+
+    const open = () => {
+        void resolve().then((id) => {
+            if (id !== null) navigate(`/metadetails/${item.kind === 'tv' ? 'series' : 'movie'}/${id}`);
+        });
+    };
 
     return (
         <li className={styles['poster-item']}>
-            {imdbId !== null ? (
-                <a className={styles['poster-link']} href={`#/metadetails/${item.kind === 'tv' ? 'series' : 'movie'}/${imdbId}`}>
-                    {content}
-                </a>
-            ) : (
-                <span className={styles['poster-link']}>{content}</span>
-            )}
+            <button
+                type="button"
+                className={styles['poster-link']}
+                disabled={status === 'missing'}
+                onClick={open}
+                onMouseEnter={prefetch}
+                onFocus={prefetch}
+            >
+                <span className={classNames(styles['poster'], item.poster === '' && styles['no-image'])}>
+                    {item.poster !== '' && <img src={item.poster} alt="" loading="lazy" decoding="async" />}
+                </span>
+                <span className={styles['poster-title']}>{item.title}</span>
+                {item.year !== '' && <span className={styles['poster-year']}>{item.year}</span>}
+            </button>
         </li>
     );
 };

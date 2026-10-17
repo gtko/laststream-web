@@ -1,7 +1,8 @@
 // Copyright (C) 2017-2026 Smart code 203358507
 
 import { useEffect, useState } from 'react';
-import { personWhy, tmdb } from 'stremio/common/lastAddon';
+import { aiLanguage, personWhy, tmdb } from 'stremio/common/lastAddon';
+import useProfile from 'stremio/common/useProfile';
 import type { TmdbPerson } from './personData';
 
 export type PersonState =
@@ -52,16 +53,26 @@ export const usePerson = (id: string, enabled: boolean): PersonState => {
     return state;
 };
 
-/** « En deux mots » généré par LastAddon. Null tant que rien n'est disponible ou en cas d'erreur. */
-export const usePersonWhy = (name: string | undefined, knownFor: string[], enabled: boolean): string | null => {
+/**
+ * « En deux mots » généré par LastAddon, à partir de l'identifiant TMDB de la personne (le serveur lit le nom et les
+ * titres sur TMDB). Null tant que rien n'est disponible ou en cas d'erreur.
+ */
+export const usePersonWhy = (personId: number, name: string, knownFor: string[], enabled: boolean): string | null => {
+    const profile = useProfile();
+    const language = aiLanguage(profile.settings?.interfaceLanguage);
     const [text, setText] = useState<string | null>(null);
     const knownForKey = knownFor.join('|');
 
     useEffect(() => {
-        if (!enabled || !name || knownForKey === '') return undefined;
+        if (!enabled || !name || personId <= 0) return undefined;
 
         let cancelled = false;
-        personWhy({ name, knownFor: knownForKey.split('|') })
+        personWhy({
+            type: 'person',
+            tmdbId: personId,
+            language,
+            legacy: { name, knownFor: knownForKey.split('|') },
+        })
             .then((response) => {
                 if (!cancelled) setText(response.text || null);
             })
@@ -72,7 +83,7 @@ export const usePersonWhy = (name: string | undefined, knownFor: string[], enabl
         return () => {
             cancelled = true;
         };
-    }, [name, knownForKey, enabled]);
+    }, [personId, name, knownForKey, enabled, language]);
 
     return text;
 };

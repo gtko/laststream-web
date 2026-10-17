@@ -3,6 +3,10 @@
 import { LastAddonError } from './errors';
 
 export const DEFAULT_TTL_MS = 10 * 60 * 1000;
+// Le serveur répond `private, max-age=300` : un cache client plus court ne ferait que refetcher.
+export const MIN_TTL_MS = 5 * 60 * 1000;
+// Le serveur limite les GET /lt/* à 120/min/IP : on garde peu de requêtes en vol (les autres attendent leur tour).
+export const MAX_IN_FLIGHT = 6;
 const SESSION_PREFIX = 'laststream.lastaddon.cache:';
 
 type CacheEntry = {
@@ -46,10 +50,11 @@ export const cachedRequest = <T>(key: string, load: () => Promise<T>, ttlMs: num
     const pending = inflight.get(key);
     if (pending) return pending as Promise<T>;
 
+    const lifetime = Math.max(ttlMs, MIN_TTL_MS);
     const request = new Promise<T>((resolve) => {
         resolve(load());
     }).then((value) => {
-        const fresh: CacheEntry = { value, expiresAt: Date.now() + ttlMs };
+        const fresh: CacheEntry = { value, expiresAt: Date.now() + lifetime };
         memory.set(key, fresh);
         writeSession(key, fresh);
         return value;
@@ -85,12 +90,42 @@ const readErrorCode = async (response: Response): Promise<string | undefined> =>
     }
 };
 
+let inFlight = 0;
+const waiting: (() => void)[] = [];
+
+// Un créneau libéré passe directement au premier en attente (FIFO) ; `inFlight` ne redescend qu'à vide.
+const acquireSlot = (): Promise<void> => {
+    if (inFlight < MAX_IN_FLIGHT) {
+        inFlight += 1;
+        return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+        waiting.push(resolve);
+    });
+};
+
+const releaseSlot = (): void => {
+    const next = waiting.shift();
+    if (next) next();
+    else inFlight -= 1;
+};
+
+/** Exécute `task` dès qu'un des MAX_IN_FLIGHT créneaux est libre. */
+const limited = async <T>(task: () => Promise<T>): Promise<T> => {
+    await acquireSlot();
+    try {
+        return await task();
+    } finally {
+        releaseSlot();
+    }
+};
+
 export type RequestOptions = {
     method?: 'GET' | 'POST';
     body?: unknown;
 };
 
-/** Requête JSON sans cache. Toute erreur est remontée sous forme de LastAddonError. */
+/** Requête JSON sans cache, à concurrence bornée. Toute erreur est remontée sous forme de LastAddonError. */
 export const requestJson = async <T>(url: string, options: RequestOptions = {}): Promise<T> => {
     const method = options.method ?? 'GET';
     const headers: Record<string, string> = { accept: 'application/json' };
@@ -102,7 +137,7 @@ export const requestJson = async <T>(url: string, options: RequestOptions = {}):
 
     let response: Response;
     try {
-        response = await fetch(url, { method, headers, body });
+        response = await limited(() => fetch(url, { method, headers, body }));
     } catch {
         throw new LastAddonError('network', 'LastAddon is unreachable.');
     }

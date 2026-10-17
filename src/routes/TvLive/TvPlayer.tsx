@@ -109,11 +109,16 @@ const TvPlayer = ({ channels, index, programsOf, onIndexChange, onClose, onPlaye
         const stallTimer = setTimeout(fail, STALL_TIMEOUT_MS);
 
         try {
-            if (DIRECT_FILE_PATTERN.test(channel.url)) {
-                video.src = channel.url;
+            // Un canal sans signature n'est pas jouable : aucune URL proxy non signée n'est construite.
+            const direct = DIRECT_FILE_PATTERN.test(channel.url);
+            const src = channel.sig ? (direct ? channel.url : hlsUrl(channel.url, channel.sig)) : null;
+            if (src === null) {
+                fail();
+            } else if (direct) {
+                video.src = src;
                 play();
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                video.src = hlsUrl(channel.url);
+                video.src = src;
                 play();
             } else {
                 loadHls()
@@ -129,7 +134,7 @@ const TvPlayer = ({ channels, index, programsOf, onIndexChange, onClose, onPlaye
                             if ((data as { fatal?: boolean })?.fatal) fail();
                         });
                         hls.on(Hls.Events.MANIFEST_PARSED, play);
-                        hls.loadSource(hlsUrl(channel.url));
+                        hls.loadSource(src);
                         hls.attachMedia(video);
                     })
                     .catch(fail);
