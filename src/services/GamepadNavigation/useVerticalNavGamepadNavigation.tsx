@@ -3,7 +3,10 @@
 import { useEffect } from 'react';
 import { useGamepad } from '../GamepadContext';
 
-const ROUTES = ['search', 'board', 'discover', 'library', 'calendar', 'addons', 'settings'];
+// Visual order of the vertical nav bar, used for LT/RT.
+const ROUTES = ['search', 'board', 'discover', 'library', 'stats', 'calendar', 'addons', 'settings'];
+// Digit shortcuts per route (see NAVIGATE_TABS_ROUTES in App.js and shortcuts.json), kept stable when tabs are added.
+const ROUTE_DIGITS: Record<string, number> = { search: 0, board: 1, discover: 2, library: 3, calendar: 4, addons: 5, settings: 6, stats: 7 };
 
 const useVerticalGamepadNavigation = (_sectionRef: React.RefObject<HTMLDivElement>, currentRoute: string) => {
     const gamepad = useGamepad();
@@ -18,7 +21,8 @@ const useVerticalGamepadNavigation = (_sectionRef: React.RefObject<HTMLDivElemen
             if (direction === 'prev') nextIndex = Math.max(currentIndex - 1, 0);
 
             if (nextIndex !== currentIndex) {
-                document.dispatchEvent(new KeyboardEvent('keydown', { key: String(nextIndex), code: `Digit${nextIndex}`, bubbles: true }));
+                const digit = ROUTE_DIGITS[ROUTES[nextIndex]];
+                document.dispatchEvent(new KeyboardEvent('keydown', { key: String(digit), code: `Digit${digit}`, bubbles: true }));
             }
         };
 

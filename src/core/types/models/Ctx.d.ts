@@ -85,9 +85,37 @@ type StreamingServerUrl = {
 
 type StreamingServerUrls = StreamingServerUrl[];
 
+type LibraryStatsTypeCount = {
+    type: string,
+    count: number,
+};
+
+type LibraryStatsTopItem = {
+    id: string,
+    name: string,
+    type: string,
+    poster: string | null,
+    overallTimeWatchedMs: number,
+};
+
+type LibraryStatsDailyActivity = {
+    date: string,
+    count: number,
+};
+
+type LibraryStats = {
+    totalWatchedMs: number,
+    moviesWatched: number,
+    seriesCount: number,
+    byType: LibraryStatsTypeCount[],
+    top: LibraryStatsTopItem[],
+    dailyActivity: LibraryStatsDailyActivity[],
+};
+
 type Ctx = {
     profile: Profile,
     notifications: Notifications,
     searchHistory: SearchHistory,
     streamingServerUrls: StreamingServerUrls,
+    libraryStats: LibraryStats,
 };

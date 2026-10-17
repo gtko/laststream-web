@@ -21,6 +21,11 @@ export default [
         element: <routes.Library />,
     },
     {
+        path: '/stats',
+        view: 1,
+        element: <routes.Stats />,
+    },
+    {
         path: '/calendar/:year?/:month?',
         view: 1,
         element: <routes.Calendar />,

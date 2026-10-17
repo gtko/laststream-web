@@ -136,6 +136,23 @@ describe('routesRegexp', () => {
         });
     });
 
+    describe('stats route regexp', () => {
+        it('match /stats', async () => {
+            expect(Array.from('/stats'.match(routesRegexp.stats.regexp)))
+                .toEqual(['/stats']);
+        });
+
+        it('not match /stats/', async () => {
+            expect('/stats/'.match(routesRegexp.stats.regexp))
+                .toBe(null);
+        });
+
+        it('not match /stats/type', async () => {
+            expect('/stats/type'.match(routesRegexp.stats.regexp))
+                .toBe(null);
+        });
+    });
+
     describe('search route regexp', () => {
         it('match /search', async () => {
             expect(Array.from('/search'.match(routesRegexp.search.regexp)))
