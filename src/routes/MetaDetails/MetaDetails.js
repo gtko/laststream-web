@@ -19,6 +19,7 @@ const { default: getMetaDetailsHref } = require('stremio/common/getMetaDetailsHr
 const useMetaDetails = require('./useMetaDetails');
 const useSeason = require('./useSeason');
 const { default: useExternalPlayerCallback } = require('./useExternalPlayerCallback');
+const { SourcesDrawer, SourcesPending, pickPlayVideo, useSourcesPlay } = require('./Sources');
 const styles = require('./styles');
 
 const GAMEPAD_HANDLER_ID = 'metadetails';
@@ -68,6 +69,21 @@ const MetaDetails = () => {
             :
             null;
     }, [metaDetails.metaItem, streamPath]);
+    const startStreamPlayback = React.useCallback((stream) => {
+        navigateToRoute(navigate, location, toPath(stream.deepLinks.player));
+    }, [navigate, location]);
+    const {
+        pending: sourcesPending,
+        drawerOpen: sourcesDrawerOpen,
+        requestPlay,
+        openDrawer: openSourcesDrawer,
+        closeDrawer: closeSourcesDrawer,
+    } = useSourcesPlay({
+        streams: metaDetails.streams,
+        hasStreamPath: streamPath !== null,
+        externalPlayer: profile.settings.playerType !== null,
+        onStartStream: startStreamPlayback,
+    });
     const externalPlayerCallbackCanMarkWatched = React.useMemo(() => {
         return typeof video?.id === 'string' &&
             metaDetails.libraryItem?.state?.video_id === video.id &&
@@ -134,10 +150,20 @@ const MetaDetails = () => {
             : url.replace(encodeURIComponent(urlParams.videoId), searchVideoHash);
         navigate(searchVideoPath, { replace: true });
     }, [urlParams, location]);
-    // Lecture de la fiche : sans flux choisi, ouvre la liste des sources du lien par défaut du core.
-    // Lot 4 remplacera ce comportement par le lancement du lecteur.
+    const resumeVideoId = metaDetails.libraryItem?.state?.video_id ?? null;
+    // Lecture de la fiche : flux déjà chargé (film, ou épisode choisi) → lecture automatique ou tiroir.
+    // Série sans épisode choisi : on ouvre l'épisode « à suivre » (reprise, sinon premier non vu).
     const handleFichePlay = React.useCallback(() => {
-        if (streamPath !== null) {
+        if (streamPath !== null || (readyMeta !== null && readyMeta.videos.length === 0)) {
+            requestPlay();
+            return;
+        }
+
+        const nextVideo = readyMeta !== null ? pickPlayVideo(readyMeta.videos, resumeVideoId) : null;
+        const nextVideoHref = nextVideo?.deepLinks?.metaDetailsStreams;
+        if (typeof nextVideoHref === 'string') {
+            navigateToRoute(navigate, location, toPath(nextVideoHref));
+            requestPlay();
             return;
         }
 
@@ -145,7 +171,30 @@ const MetaDetails = () => {
         if (typeof href === 'string') {
             navigateToRoute(navigate, location, toPath(href));
         }
-    }, [streamPath, deepLinks, navigate, location]);
+    }, [streamPath, readyMeta, resumeVideoId, deepLinks, navigate, location, requestPlay]);
+    // Depuis le lecteur (« Changer de source ») : ouvre directement le tiroir, puis retire l'état de navigation.
+    React.useEffect(() => {
+        if (location.state?.openSources === true) {
+            openSourcesDrawer();
+            navigate(location.pathname + location.search, { replace: true, state: null });
+        }
+    }, [location.state, location.pathname, location.search, navigate, openSourcesDrawer]);
+    const sourcesTitle = video !== null && typeof video.season === 'number' && typeof video.episode === 'number'
+        ? `S${video.season}E${video.episode}${video.title ? ` ${video.title}` : ''}`
+        : (readyMeta?.name ?? '');
+    const sourcesOverlay = (
+        <React.Fragment>
+            {sourcesPending ? <SourcesPending /> : null}
+            {sourcesDrawerOpen ? (
+                <SourcesDrawer
+                    title={sourcesTitle}
+                    streams={metaDetails.streams}
+                    video={video}
+                    onClose={closeSourcesDrawer}
+                />
+            ) : null}
+        </React.Fragment>
+    );
     const renderBackgroundImageFallback = React.useCallback(() => null, []);
     const renderBackground = React.useMemo(() => !!(
         metaPath &&
@@ -222,6 +271,7 @@ const MetaDetails = () => {
                         null
                     }
                 />
+                {sourcesOverlay}
             </div>
         );
     }
@@ -325,6 +375,7 @@ const MetaDetails = () => {
                             null
                 }
             </div>
+            {sourcesOverlay}
         </div>
     );
 };

@@ -61,6 +61,17 @@ const Player = () => {
     const goBack = useGoBack();
     const { t } = useTranslation();
     const services = useServices();
+    // « Changer de source » : retour à la fiche du même contenu, avec le tiroir des sources ouvert.
+    const changeSource = React.useMemo(() => {
+        if (typeof type !== 'string' || typeof id !== 'string' || typeof videoId !== 'string') {
+            return undefined;
+        }
+
+        return () => navigate(
+            `/detail/${encodeURIComponent(type)}/${encodeURIComponent(id)}/${encodeURIComponent(videoId)}`,
+            { state: { openSources: true } }
+        );
+    }, [type, id, videoId, navigate]);
     const core = useCore();
     const gamepad = useGamepad();
     const forceTranscoding = React.useMemo(() => {
@@ -1027,6 +1038,7 @@ const Player = () => {
                     playbackDevices={playbackDevices}
                     extraSubtitlesTracks={extraSubtitleTracks}
                     selectedExtraSubtitlesTrackId={selectedExtraSubtitleTrackId}
+                    onChangeSource={changeSource}
                 />
             </ContextMenu>
             <HorizontalNavBar
@@ -1159,6 +1171,7 @@ const Player = () => {
                     playbackDevices={playbackDevices}
                     extraSubtitlesTracks={extraSubtitleTracks}
                     selectedExtraSubtitlesTrackId={selectedExtraSubtitleTrackId}
+                    onChangeSource={changeSource}
                 />
             </Transition>
         </div>

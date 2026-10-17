@@ -9,7 +9,7 @@ const { default: usePlayOnDevice } = require('../usePlayOnDevice');
 const Option = require('./Option');
 const styles = require('./styles');
 
-const OptionsMenu = React.memo(React.forwardRef(({ className, stream, playbackDevices, extraSubtitlesTracks, selectedExtraSubtitlesTrackId }, ref) => {
+const OptionsMenu = React.memo(React.forwardRef(({ className, stream, playbackDevices, extraSubtitlesTracks, selectedExtraSubtitlesTrackId, onChangeSource }, ref) => {
     const { t } = useTranslation();
     const platform = usePlatform();
     const toast = useToast();
@@ -139,6 +139,16 @@ const OptionsMenu = React.memo(React.forwardRef(({ className, stream, playbackDe
                     null
             }
             {
+                typeof onChangeSource === 'function' ?
+                    <Option
+                        icon={'addons'}
+                        label={t('SOURCES_CHANGE', { defaultValue: 'Changer de source' })}
+                        onClick={onChangeSource}
+                    />
+                    :
+                    null
+            }
+            {
                 streamingUrl && externalDevices.map(({ id, name }) => (
                     <Option
                         key={id}
@@ -160,6 +170,7 @@ OptionsMenu.propTypes = {
     playbackDevices: PropTypes.array,
     extraSubtitlesTracks: PropTypes.array,
     selectedExtraSubtitlesTrackId: PropTypes.string,
+    onChangeSource: PropTypes.func,
 };
 
 module.exports = OptionsMenu;
