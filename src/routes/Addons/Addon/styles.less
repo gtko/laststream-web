@@ -18,6 +18,64 @@
         border-color: var(--overlay-color);
     }
 
+    &.dragging {
+        opacity: 0.4;
+    }
+
+    &.drop-target {
+        border-color: var(--secondary-accent-color);
+    }
+
+    .reorder-container {
+        flex: none;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        align-self: stretch;
+        gap: 0.5rem;
+        margin-right: 1rem;
+
+        .move-button, .drag-handle {
+            flex: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 3rem;
+            height: 3rem;
+            color: var(--primary-foreground-color);
+
+            .icon {
+                flex: none;
+                width: 2rem;
+                height: 2rem;
+            }
+        }
+
+        .move-button {
+            padding: 0;
+            border: 0;
+            border-radius: 50%;
+            background-color: transparent;
+            outline: var(--focus-outline-size) solid transparent;
+            cursor: pointer;
+
+            &:hover:not(:disabled), &:focus-visible {
+                outline-color: var(--primary-foreground-color);
+            }
+
+            &:disabled {
+                opacity: 0.3;
+                cursor: default;
+            }
+        }
+
+        .drag-handle {
+            opacity: 0.6;
+            cursor: grab;
+        }
+    }
+
     .logo-container {
         flex: none;
         width: 8rem;

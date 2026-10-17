@@ -53,6 +53,7 @@ type Settings = {
 
 type Profile = {
     auth: Auth | null,
+    addonsLocked: boolean,
     settings: Settings,
 };
 
