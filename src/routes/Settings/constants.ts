@@ -3,6 +3,7 @@ const SECTIONS = {
     PLAYER: 'player',
     INTERFACE: 'interface',
     STREAMING: 'streaming',
+    LASTADDON: 'lastaddon',
     SHORTCUTS: 'shortcuts',
 };
 

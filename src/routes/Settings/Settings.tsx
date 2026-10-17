@@ -11,6 +11,7 @@ import General from './General';
 import Interface from './Interface';
 import Player from './Player';
 import Streaming from './Streaming';
+import LastAddon from './LastAddon';
 import Shortcuts from './Shortcuts';
 import Info from './Info';
 import styles from './Settings.less';
@@ -26,6 +27,7 @@ const Settings = () => {
     const interfaceSectionRef = useRef<HTMLDivElement>(null);
     const playerSectionRef = useRef<HTMLDivElement>(null);
     const streamingServerSectionRef = useRef<HTMLDivElement>(null);
+    const lastAddonSectionRef = useRef<HTMLDivElement>(null);
     const shortcutsSectionRef = useRef<HTMLDivElement>(null);
 
     const sections = useMemo(() => ([
@@ -33,6 +35,7 @@ const Settings = () => {
         { ref: interfaceSectionRef, id: SECTIONS.INTERFACE },
         { ref: playerSectionRef, id: SECTIONS.PLAYER },
         { ref: streamingServerSectionRef, id: SECTIONS.STREAMING },
+        { ref: lastAddonSectionRef, id: SECTIONS.LASTADDON },
         { ref: shortcutsSectionRef, id: SECTIONS.SHORTCUTS },
     ]), []);
 
@@ -110,6 +113,10 @@ const Settings = () => {
                         ref={streamingServerSectionRef}
                         profile={profile}
                         streamingServer={streamingServer}
+                    />
+                    <LastAddon
+                        ref={lastAddonSectionRef}
+                        profile={profile}
                     />
                     {
                         !platform.isMobile && <Shortcuts ref={shortcutsSectionRef} />
