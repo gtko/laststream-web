@@ -59,6 +59,25 @@
     <link rel="apple-touch-startup-image" href="<%= htmlWebpackPlugin.options.imagesPath %>/splash/apple-splash-1136-640.jpg" media="(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)">
     <link rel="manifest" href="manifest.json" />
     <title>Stremio - Freedom to Stream</title>
+    <script>
+        // Applies the stored colour theme before the first paint. The variable list and VALUE_PATTERN must stay in sync
+        // with src/common/theme/theme.js (tests/theme.spec.js asserts it).
+        (function () {
+            var VALUE_PATTERN = /^(#[0-9a-f]{6}|0px 0px 15px rgba\(\d{1,3}, \d{1,3}, \d{1,3}, 0\.\d{1,2}\))$/i;
+            try {
+                var stored = JSON.parse(localStorage.getItem('laststream.theme'));
+                var variables = (stored && stored.variables) || {};
+                ['--primary-accent-color', '--primary-accent-foreground-color', '--outer-glow'].forEach(function (name) {
+                    var value = variables[name];
+                    if (typeof value === 'string' && VALUE_PATTERN.test(value)) {
+                        document.documentElement.style.setProperty(name, value);
+                    }
+                });
+            } catch (error) {
+                // Storage unavailable or corrupted: keep the default theme.
+            }
+        })();
+    </script>
     <%= htmlWebpackPlugin.tags.headTags %>
 </head>
 

@@ -3,6 +3,7 @@ import { usePlatform } from 'stremio/common';
 import { Scale, MultiselectMenu, Toggle } from 'stremio/components';
 import { Section, Option } from '../components';
 import useInterfaceOptions from './useInterfaceOptions';
+import ThemeSelector from './ThemeSelector';
 
 type Props = {
     profile: Profile,
@@ -30,6 +31,9 @@ const Interface = forwardRef<HTMLDivElement, Props>(({ profile }: Props, ref) =>
             </Option>
             <Option label={'SETTINGS_UI_ZOOM'}>
                 <Scale {...interfaceSize} />
+            </Option>
+            <Option label={'THEME'}>
+                <ThemeSelector />
             </Option>
             {
                 shell.active &&

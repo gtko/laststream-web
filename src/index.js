@@ -21,6 +21,7 @@ const App = require('./App');
 const { default: WebUpdateScreen } = require('./App/WebUpdateScreen');
 const { CoreProvider } = require('./core');
 const { FileDropProvider, PlatformProvider } = require('./common');
+const { applyTheme, readStoredTheme } = require('./common/theme/theme');
 
 const translations = Object.fromEntries(Object.entries(stremioTranslations()).map(([key, value]) => [key, {
     translation: value
@@ -41,6 +42,8 @@ const appInfo = {
     appVersion: process.env.VERSION,
     shellVersion: null
 };
+
+applyTheme(readStoredTheme());
 
 const root = ReactDOM.createRoot(document.getElementById('app'));
 root.render(
