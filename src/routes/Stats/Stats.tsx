@@ -136,7 +136,7 @@ const Stats = () => {
                                 />
                                 <SummaryCard
                                     value={formatCount(stats.seriesCount, language)}
-                                    label={t('STATS_SERIES_FOLLOWED', { defaultValue: 'Series followed' })}
+                                    label={t('STATS_SERIES_WATCHED', { defaultValue: 'Series watched' })}
                                 />
                             </div>
                             {
