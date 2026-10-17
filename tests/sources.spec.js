@@ -5,10 +5,12 @@ const path = require('path');
 const ts = require('typescript');
 
 const SOURCES_FILE = path.join(__dirname, '..', 'src', 'common', 'lastAddon', 'sources.ts');
-const SESSION_KEY = 'laststream.bandwidth';
+const MEASURED_KEY = 'laststream.bandwidth.measured';
+const SETTING_KEY = 'laststream.bandwidth.setting';
+const TEST_URL = 'https://speed.cloudflare.com/__down?bytes=8000000';
 
 // Même principe que lastAddon.spec.js : le module TypeScript est transpilé ici, puis évalué dans le test.
-// Chaque chargement repart de zéro, donc le cache mémoire du débit est vierge à chaque test.
+// Chaque chargement repart de zéro (état module vierge, par exemple les blocages de lecture).
 const resolveTs = (fromDir, request) => {
     const base = path.resolve(fromDir, request);
     return [`${base}.ts`, path.join(base, 'index.ts')].find((candidate) => fs.existsSync(candidate)) || null;
@@ -103,7 +105,6 @@ let perfNow;
 beforeEach(() => {
     setGlobal('localStorage', createStorage());
     setGlobal('sessionStorage', createStorage());
-    setGlobal('navigator', { connection: undefined });
     fetchMock = jest.fn();
     setGlobal('fetch', fetchMock);
     clock = 1700000000000;
@@ -207,7 +208,7 @@ describe('pickAutoplay', () => {
 
         expect(pickAutoplay([vo, vf], 20000, 'fr')).toEqual({ stream: vf, languageFallback: false });
         expect(pickAutoplay([vo, multi], 20000, 'fr')).toEqual({ stream: multi, languageFallback: false });
-        expect(pickAutoplay([vo], 20000, 'fr')).toEqual({ stream: vo, languageFallback: true });
+        expect(pickAutoplay([vo], 20000, 'fr')).toEqual({ stream: vo, languageFallback: true, fallbackReason: 'no-vf' });
     });
 
     it('treats a server languageFallback flag as not matching the preferred language', () => {
@@ -215,10 +216,31 @@ describe('pickAutoplay', () => {
         const flagged = stream('flagged', laststream({ score: 90, languages: ['fr'], languageFallback: true }));
         const vo = stream('vo', laststream({ score: 10, languages: ['en'] }));
 
-        // Aucun flux VF réel : repli sur le meilleur score, signalé comme VO.
-        expect(pickAutoplay([flagged, vo], 20000, 'fr')).toEqual({ stream: flagged, languageFallback: true });
+        // Aucun flux VF réel dans la liste : repli sur le meilleur score, signalé comme VO.
+        expect(pickAutoplay([flagged, vo], 20000, 'fr')).toEqual({ stream: flagged, languageFallback: true, fallbackReason: 'no-vf' });
         const realFr = stream('real-fr', laststream({ score: 20, languages: ['fr'] }));
         expect(pickAutoplay([flagged, realFr, vo], 20000, 'fr')).toEqual({ stream: realFr, languageFallback: false });
+    });
+
+    it('reports a VF that exists but exceeds the bandwidth as vf-too-heavy, and picks the VO that fits', () => {
+        const { pickAutoplay } = loadSources();
+        const vfHeavy = stream('vf-heavy', laststream({ score: 90, estBitrateKbps: 50000, languages: ['fr'] }));
+        const vo = stream('vo', laststream({ score: 40, estBitrateKbps: 5000, languages: ['en'] }));
+
+        expect(pickAutoplay([vfHeavy, vo], 10000, 'fr')).toEqual({
+            stream: vo,
+            languageFallback: true,
+            fallbackReason: 'vf-too-heavy',
+        });
+    });
+
+    it('prefers a VF that fits, even at a lower resolution, over a VO', () => {
+        const { pickAutoplay } = loadSources();
+        const uhdVf = stream('uhd-vf', laststream({ resolution: '2160p', score: 95, estBitrateKbps: 40000, languages: ['fr'] }));
+        const hdVf = stream('hd-vf', laststream({ resolution: '1080p', score: 60, estBitrateKbps: 6000, languages: ['fr'] }));
+        const uhdVo = stream('uhd-vo', laststream({ resolution: '2160p', score: 97, estBitrateKbps: 9000, languages: ['en'] }));
+
+        expect(pickAutoplay([uhdVf, hdVf, uhdVo], 10000, 'fr')).toEqual({ stream: hdVf, languageFallback: false });
     });
 
     it('ignores streams without a valid laststream object', () => {
@@ -243,90 +265,130 @@ describe('pickAutoplay', () => {
     });
 });
 
-describe('combineBandwidthKbps', () => {
-    it('takes the lower of network and measured estimates, or whichever exists', () => {
-        const { combineBandwidthKbps } = loadSources();
-        expect(combineBandwidthKbps(10000, 4000)).toBe(4000);
-        expect(combineBandwidthKbps(3000, 9000)).toBe(3000);
-        expect(combineBandwidthKbps(10000, null)).toBe(10000);
-        expect(combineBandwidthKbps(null, 4000)).toBe(4000);
-        expect(combineBandwidthKbps(null, null)).toBeNull();
+describe('planBandwidth (décision pure)', () => {
+    const now = 1000;
+
+    it('uses a fixed setting in Mb/s without measuring', () => {
+        const { planBandwidth } = loadSources();
+        expect(planBandwidth(20, { kbps: 1, expiresAt: now + 1 }, now)).toEqual({ kind: 'manual', kbps: 20000 });
+    });
+
+    it('uses the stored measure while it is valid (auto)', () => {
+        const { planBandwidth } = loadSources();
+        expect(planBandwidth('auto', { kbps: 7000, expiresAt: now + 1 }, now)).toEqual({ kind: 'stored', kbps: 7000 });
+    });
+
+    it('measures when the stored entry is missing, expired or invalid', () => {
+        const { planBandwidth } = loadSources();
+        expect(planBandwidth('auto', null, now)).toEqual({ kind: 'measure' });
+        expect(planBandwidth('auto', { kbps: 7000, expiresAt: now }, now)).toEqual({ kind: 'measure' });
+        expect(planBandwidth('auto', { kbps: 0, expiresAt: now + 1 }, now)).toEqual({ kind: 'measure' });
+    });
+
+});
+
+describe('registerStallEvent (blocages de lecture)', () => {
+    it('lowers only when more than 3 stalls happen within 60 s', () => {
+        const { registerStallEvent } = loadSources();
+        let state = { events: [], lower: false };
+        [0, 10000, 20000].forEach((at) => {
+            state = registerStallEvent(state.events, at);
+        });
+        expect(state.lower).toBe(false);
+        state = registerStallEvent(state.events, 30000);
+        expect(state).toEqual({ events: [], lower: true });
+    });
+
+    it('forgets stalls older than 60 s', () => {
+        const { registerStallEvent } = loadSources();
+        let state = { events: [], lower: false };
+        [0, 10000, 20000].forEach((at) => {
+            state = registerStallEvent(state.events, at);
+        });
+        state = registerStallEvent(state.events, 65000);
+        expect(state.lower).toBe(false);
+        expect(state.events).toEqual([10000, 20000, 65000]);
     });
 });
 
-describe('measureBandwidthKbps', () => {
-    it('combines navigator.connection.downlink (Mbps to kbps) with a timed probe on the stream URL', async () => {
-        const { measureBandwidthKbps } = loadSources();
-        setGlobal('navigator', { connection: { downlink: 20 } });
-        fetchMock.mockResolvedValue({ ok: true, status: 206, body: bodyOf(131072) });
+describe('testBandwidthKbps and measureBandwidthKbps', () => {
+    it('measures the CDN test file (8 MB at most), converting bytes to kbps', async () => {
+        const { testBandwidthKbps } = loadSources();
+        fetchMock.mockResolvedValue({ ok: true, status: 200, body: bodyOf(131072) });
 
-        // 131072 octets en 1 s = 1048.576 kbit/s : plus faible que 20 Mbps.
-        await expect(measureBandwidthKbps('https://cdn.example.com/a.mkv')).resolves.toBeCloseTo(1048.576, 3);
-        expect(fetchMock).toHaveBeenCalledWith(
-            'https://cdn.example.com/a.mkv',
-            expect.objectContaining({ headers: { Range: 'bytes=0-262143' } }),
-        );
+        // 131072 octets en 1 s = 1048.576 kbit/s.
+        await expect(testBandwidthKbps()).resolves.toBeCloseTo(1048.576, 3);
+        expect(fetchMock).toHaveBeenCalledWith(TEST_URL, expect.objectContaining({ cache: 'no-store' }));
     });
 
-    it('uses the network estimate alone when the probe fails', async () => {
+    it('stores the measure for 24 h in localStorage and reuses it in auto mode', async () => {
         const { measureBandwidthKbps } = loadSources();
-        setGlobal('navigator', { connection: { downlink: 5 } });
-        fetchMock.mockRejectedValue(new Error('network down'));
+        fetchMock.mockResolvedValue({ ok: true, status: 200, body: bodyOf(1048576) });
 
-        await expect(measureBandwidthKbps('https://cdn.example.com/a.mkv')).resolves.toBe(5000);
+        await expect(measureBandwidthKbps()).resolves.toBeCloseTo(8388.608, 3);
+        expect(JSON.parse(localStorage.getItem(MEASURED_KEY)).expiresAt).toBe(clock + 24 * 60 * 60 * 1000);
+        clock += 23 * 60 * 60 * 1000;
+        await expect(measureBandwidthKbps()).resolves.toBeCloseTo(8388.608, 3);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    it('ignores a probe that is too small to be meaningful', async () => {
+    it('measures again once the stored measure is older than 24 h', async () => {
         const { measureBandwidthKbps } = loadSources();
-        setGlobal('navigator', { connection: undefined });
-        fetchMock.mockResolvedValue({ ok: true, status: 200, body: bodyOf(4096) });
+        fetchMock.mockResolvedValue({ ok: true, status: 200, body: bodyOf(131072) });
+        await measureBandwidthKbps();
 
-        await expect(measureBandwidthKbps('https://cdn.example.com/a.mkv')).resolves.toBeNull();
+        clock += 24 * 60 * 60 * 1000 + 1;
+        await measureBandwidthKbps();
+        expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
-    it('falls back to the bundled small file when there is no stream URL', async () => {
-        const { measureBandwidthKbps, BANDWIDTH_FALLBACK_PROBE_URL } = loadSources();
-        fetchMock.mockResolvedValue({ ok: true, status: 200, body: bodyOf(98000) });
-
-        await measureBandwidthKbps(null);
-        expect(fetchMock.mock.calls[0][0]).toBe(BANDWIDTH_FALLBACK_PROBE_URL);
-    });
-
-    it('caches the result for 10 minutes in sessionStorage and memory', async () => {
+    it('returns the manual setting without any request, and no measure when nothing is known', async () => {
         const { measureBandwidthKbps } = loadSources();
-        setGlobal('navigator', { connection: { downlink: 8 } });
-
-        await expect(measureBandwidthKbps(null)).resolves.toBe(8000);
-        const probesAfterFirstCall = fetchMock.mock.calls.length;
-        clock += 9 * 60 * 1000;
-        await expect(measureBandwidthKbps(null)).resolves.toBe(8000);
-        expect(fetchMock.mock.calls.length).toBe(probesAfterFirstCall);
-        expect(JSON.parse(sessionStorage.getItem(SESSION_KEY)).expiresAt).toBe(1700000000000 + 10 * 60 * 1000);
-    });
-
-    it('measures again once the cache entry has expired', async () => {
-        const { measureBandwidthKbps } = loadSources();
-        setGlobal('navigator', { connection: { downlink: 8 } });
-        await measureBandwidthKbps(null);
-
-        setGlobal('navigator', { connection: { downlink: 2 } });
-        clock += 10 * 60 * 1000 + 1;
-        await expect(measureBandwidthKbps(null)).resolves.toBe(2000);
-    });
-
-    it('reads a valid entry from sessionStorage in a fresh module', async () => {
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify({ kbps: 7777, expiresAt: clock + 60000 }));
-        const { measureBandwidthKbps } = loadSources();
-
-        await expect(measureBandwidthKbps(null)).resolves.toBe(7777);
+        localStorage.setItem(SETTING_KEY, '20');
+        await expect(measureBandwidthKbps()).resolves.toBe(20000);
         expect(fetchMock).not.toHaveBeenCalled();
+
+        localStorage.setItem(SETTING_KEY, 'auto');
+        fetchMock.mockRejectedValue(new Error('blocked'));
+        await expect(measureBandwidthKbps()).resolves.toBeNull();
     });
 
-    it('returns null when neither the network nor the probe gives an estimate', async () => {
-        const { measureBandwidthKbps } = loadSources();
-        fetchMock.mockRejectedValue(new Error('blocked'));
+    it('ignores a download too small to be meaningful, and failed responses', async () => {
+        const { testBandwidthKbps } = loadSources();
+        fetchMock.mockResolvedValueOnce({ ok: true, status: 200, body: bodyOf(4096) });
+        await expect(testBandwidthKbps()).resolves.toBeNull();
 
-        await expect(measureBandwidthKbps('https://cdn.example.com/a.mkv')).resolves.toBeNull();
+        fetchMock.mockResolvedValueOnce({ ok: false, status: 503 });
+        await expect(testBandwidthKbps()).resolves.toBeNull();
+    });
+
+    it('tests even when a manual setting is set, and stores the result', async () => {
+        const { testBandwidthKbps } = loadSources();
+        localStorage.setItem(SETTING_KEY, '50');
+        fetchMock.mockResolvedValue({ ok: true, status: 200, body: bodyOf(131072) });
+
+        await expect(testBandwidthKbps()).resolves.toBeCloseTo(1048.576, 3);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(JSON.parse(localStorage.getItem(MEASURED_KEY)).kbps).toBeCloseTo(1048.576, 3);
+    });
+
+    it('lowers the stored measure by 30 % after more than 3 buffering stalls in 60 s', () => {
+        const { reportBufferingStall } = loadSources();
+        localStorage.setItem(MEASURED_KEY, JSON.stringify({ kbps: 10000, expiresAt: clock + 60000 }));
+
+        reportBufferingStall(clock);
+        reportBufferingStall(clock + 1000);
+        reportBufferingStall(clock + 2000);
+        expect(JSON.parse(localStorage.getItem(MEASURED_KEY)).kbps).toBe(10000);
+
+        reportBufferingStall(clock + 3000);
+        expect(JSON.parse(localStorage.getItem(MEASURED_KEY))).toEqual({ kbps: 7000, expiresAt: clock + 60000 });
+    });
+
+    it('does nothing on stalls when no measure is stored', () => {
+        const { reportBufferingStall } = loadSources();
+        [0, 1000, 2000, 3000].forEach((at) => reportBufferingStall(clock + at));
+        expect(localStorage.getItem(MEASURED_KEY)).toBeNull();
     });
 });
 

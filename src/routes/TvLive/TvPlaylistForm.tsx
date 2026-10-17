@@ -70,7 +70,7 @@ const TvPlaylistForm = ({ onSaved }: Props) => {
         setServer('');
         setUsername('');
         setPassword('');
-        setMessage(t('TV_PLAYLIST_CLEARED', { defaultValue: 'Playlist retirée de ce navigateur.' }));
+        setMessage(t('TV_PLAYLIST_CLEARED', { defaultValue: 'Playlist oubliée : elle est retirée de ce navigateur.' }));
         onSaved();
     };
 
@@ -117,7 +117,7 @@ const TvPlaylistForm = ({ onSaved }: Props) => {
                     {t('TV_PLAYLIST_SAVE', { defaultValue: 'Enregistrer et charger' })}
                 </button>
                 <Button className={styles['form-button']} onClick={onClear}>
-                    {t('TV_PLAYLIST_CLEAR', { defaultValue: 'Retirer ma playlist' })}
+                    {t('TV_PLAYLIST_CLEAR', { defaultValue: 'Oublier ma playlist' })}
                 </Button>
             </div>
             <p className={styles['form-message']} role={'status'}>{message}</p>

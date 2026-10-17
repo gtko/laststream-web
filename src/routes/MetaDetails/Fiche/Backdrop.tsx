@@ -30,7 +30,7 @@ const Backdrop = ({ imageSrc, trailerKey }: Props) => {
             )}
             {videoAllowed && trailerKey !== null && (
                 <div className={classNames(styles['backdrop-video'], videoOn && styles['is-on'])}>
-                    <iframe src={youtubeEmbedUrl(trailerKey, true)} tabIndex={-1} allow="autoplay; encrypted-media" />
+                    <iframe src={youtubeEmbedUrl(trailerKey, true)} tabIndex={-1} allow="autoplay; encrypted-media" referrerPolicy="strict-origin-when-cross-origin" />
                 </div>
             )}
             <div className={styles['backdrop-scrim']} />

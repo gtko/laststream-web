@@ -32,6 +32,7 @@
         "fast-equals": "^6.0.0",
         "filter-invalid-dom-props": "3.0.1",
         "hat": "^0.0.3",
+        "hls.js": "1.5.13",
         "i18next": "^24.2.3",
         "langs": "github:Stremio/nodejs-langs",
         "lodash.debounce": "4.0.8",

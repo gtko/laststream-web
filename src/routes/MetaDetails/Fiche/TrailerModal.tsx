@@ -29,6 +29,7 @@ const TrailerModal = ({ videoKey, onClose }: Props) => {
                     src={youtubeEmbedUrl(videoKey, false)}
                     title={t('TRAILER', { defaultValue: 'Bande-annonce' })}
                     allow="autoplay; encrypted-media; fullscreen"
+                    referrerPolicy="strict-origin-when-cross-origin"
                     allowFullScreen
                 />
             </div>

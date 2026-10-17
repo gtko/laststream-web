@@ -23,7 +23,7 @@ import type {
 
 // Les GET sont mis en cache (TTL par défaut, voir transport.ts). Les POST d'IA le sont aussi, indexés par corps.
 // Les imports de playlist ne le sont pas : ce sont des mutations.
-const getCached = <T>(url: string): Promise<T> => cachedRequest(url, () => requestJson<T>(url));
+const getCached = <T>(url: string, signal?: AbortSignal): Promise<T> => cachedRequest(url, () => requestJson<T>(url, { signal }));
 
 const postCached = <T>(url: string, body: unknown): Promise<T> => cachedRequest(
     `POST ${url} ${JSON.stringify(body)}`,
@@ -74,12 +74,12 @@ export const sanitizeTmdbParams = (params: Record<string, QueryValue> = {}): Rec
 };
 
 /** Passthrough TMDB : `path` est le chemin TMDB sans /3 (ex. `movie/550`, `search/movie`). */
-export const tmdb = async <T = unknown>(path: string, params?: Record<string, QueryValue>): Promise<T> =>
-    getCached<T>(ltUrl(`tmdb/${path}`, sanitizeTmdbParams(params)));
+export const tmdb = async <T = unknown>(path: string, params?: Record<string, QueryValue>, signal?: AbortSignal): Promise<T> =>
+    getCached<T>(ltUrl(`tmdb/${path}`, sanitizeTmdbParams(params)), signal);
 
 /** Notes MDBList. */
-export const mdblist = async (type: MdblistType, id: string | number): Promise<MdblistResponse> =>
-    getCached<MdblistResponse>(ltUrl(`mdblist/${type}/${id}`));
+export const mdblist = async (type: MdblistType, id: string | number, signal?: AbortSignal): Promise<MdblistResponse> =>
+    getCached<MdblistResponse>(ltUrl(`mdblist/${type}/${id}`), signal);
 
 /** Saisons et statut d'une série (TVDB). */
 export const tvdbSeries = async (id: string | number): Promise<TvdbSeriesResponse> =>
@@ -134,8 +134,8 @@ export const hlsUrl = (u: string, sig: string | null | undefined): string | null
 );
 
 /** Retrouve un film ou une série TMDB à partir d'un identifiant IMDb (`tt...`). Null si aucun résultat. */
-export const findByExternalId = async (imdbId: string): Promise<TmdbFindResult | null> => {
-    const found = await tmdb<TmdbFindResponse>(`find/${imdbId}`, { external_source: 'imdb_id' });
+export const findByExternalId = async (imdbId: string, signal?: AbortSignal): Promise<TmdbFindResult | null> => {
+    const found = await tmdb<TmdbFindResponse>(`find/${imdbId}`, { external_source: 'imdb_id' }, signal);
     const movie = found.movie_results?.[0];
     if (movie) return { type: 'movie', tmdbId: movie.id };
     const show = found.tv_results?.[0];

@@ -1,6 +1,7 @@
 // Copyright (C) 2017-2026 Smart code 203358507
 
 import { getLaststream } from './stream';
+import { getBandwidthSetting, type BandwidthSetting } from './prefs';
 import type { LastStreamInfo, LastStreamLang } from './types';
 
 // Fonctions pures de sélection des sources LastAddon : tri par score, regroupement par qualité,
@@ -15,27 +16,67 @@ export type QualityGroup<T> = {
     streams: T[];
 };
 
+export type AutoplayFallbackReason = 'no-vf' | 'vf-too-heavy';
+
 export type AutoplayPick<T> = {
     stream: T;
     languageFallback: boolean;
+    // Présent seulement en repli VO : « aucune VF dans la liste » ou « une VF existe mais dépasse le débit ».
+    fallbackReason?: AutoplayFallbackReason;
 };
 
-export const BANDWIDTH_CACHE_TTL_MS = 10 * 60 * 1000;
-export const BANDWIDTH_TIMEOUT_MS = 2000;
-export const BANDWIDTH_PROBE_BYTES = 262144;
-// En dessous de cette taille, la mesure reflète surtout la latence : on l'ignore.
-export const BANDWIDTH_MIN_PROBE_BYTES = 65536;
-// Marge : une source ne doit pas dépasser 80 % du débit mesuré.
+// Mesure de débit : un téléchargement d'au plus 8 Mo ou 3 s sur le CDN de test (CORS ouvert, vérifié).
+export const BANDWIDTH_MEASURE_URL = 'https://speed.cloudflare.com/__down?bytes=8000000';
+export const BANDWIDTH_MEASURE_BYTES = 8000000;
+export const BANDWIDTH_MEASURE_MS = 3000;
+// En dessous de cette taille, la mesure reflète surtout la latence : on la rejette.
+export const BANDWIDTH_MIN_MEASURE_BYTES = 65536;
+// Dernière mesure valable 24 h (localStorage).
+export const BANDWIDTH_STORED_TTL_MS = 24 * 60 * 60 * 1000;
+export const BANDWIDTH_STORAGE_KEY = 'laststream.bandwidth.measured';
+// Marge : une source ne doit pas dépasser 80 % du débit retenu.
 export const BANDWIDTH_HEADROOM = 0.8;
-export const BANDWIDTH_FALLBACK_PROBE_URL = '/assets/images/empty.png';
-const BANDWIDTH_STORAGE_KEY = 'laststream.bandwidth';
+// Plus de 3 blocages de lecture en 60 s : le débit retenu baisse de 30 %.
+export const BANDWIDTH_STALL_WINDOW_MS = 60 * 1000;
+export const BANDWIDTH_STALL_LIMIT = 3;
+export const BANDWIDTH_STALL_PENALTY = 0.7;
 
-type BandwidthCacheEntry = {
+export type StoredBandwidth = {
     kbps: number;
     expiresAt: number;
 };
 
-let memoryBandwidth: BandwidthCacheEntry | null = null;
+/** Où trouver le débit : réglage manuel (sans mesure), dernière mesure encore valable, ou nouvelle mesure. */
+export type BandwidthPlan =
+    | { kind: 'manual', kbps: number }
+    | { kind: 'stored', kbps: number }
+    | { kind: 'measure' };
+
+/** Décision pure : réglage fixe > mesure stockée valable > nouvelle mesure. */
+export const planBandwidth = (
+    setting: BandwidthSetting,
+    stored: StoredBandwidth | null,
+    now: number,
+): BandwidthPlan => {
+    if (setting !== 'auto') return { kind: 'manual', kbps: setting * 1000 };
+    if (stored && Number.isFinite(stored.kbps) && stored.kbps > 0 && stored.expiresAt > now) {
+        return { kind: 'stored', kbps: stored.kbps };
+    }
+    return { kind: 'measure' };
+};
+
+/**
+ * Enregistre un blocage de lecture. Renvoie les horodatages encore utiles et `lower` quand le seuil est dépassé
+ * (plus de BANDWIDTH_STALL_LIMIT blocages dans la fenêtre) ; la liste repart alors de zéro.
+ */
+export const registerStallEvent = (
+    events: readonly number[],
+    now: number,
+): { events: number[], lower: boolean } => {
+    const recent = [...events.filter((at) => now - at < BANDWIDTH_STALL_WINDOW_MS), now];
+    if (recent.length > BANDWIDTH_STALL_LIMIT) return { events: [], lower: true };
+    return { events: recent, lower: false };
+};
 
 /** URL HTTP(S) directe d'un stream, ou null (torrent, lien externe, flux sans URL). */
 export const getStreamHttpUrl = (stream: object): string | null => {
@@ -97,111 +138,106 @@ export const matchesLanguage = (info: LastStreamInfo, lang: LastStreamLang): boo
     return info.languages.includes(lang) || info.languages.includes('multi');
 };
 
-/**
- * Combine débit réseau (navigator.connection.downlink, Mbps) et débit mesuré : le plus faible des deux
- * quand les deux existent, sinon celui qui existe, sinon null.
- */
-export const combineBandwidthKbps = (networkKbps: number | null, probeKbps: number | null): number | null => {
-    if (networkKbps !== null && probeKbps !== null) return Math.min(networkKbps, probeKbps);
-    return networkKbps ?? probeKbps;
-};
-
 const now = (): number => (typeof performance !== 'undefined' && typeof performance.now === 'function')
     ? performance.now()
     : Date.now();
 
-const readNetworkKbps = (): number | null => {
+const readStoredBandwidth = (): StoredBandwidth | null => {
     try {
-        const connection = (globalThis.navigator as { connection?: { downlink?: unknown } } | undefined)?.connection;
-        const downlink = connection?.downlink;
-        return typeof downlink === 'number' && Number.isFinite(downlink) && downlink > 0 ? downlink * 1000 : null;
-    } catch {
-        return null;
-    }
-};
-
-const readCachedBandwidth = (): number | null => {
-    if (memoryBandwidth && memoryBandwidth.expiresAt > Date.now()) return memoryBandwidth.kbps;
-    try {
-        const raw = globalThis.sessionStorage?.getItem(BANDWIDTH_STORAGE_KEY);
+        const raw = globalThis.localStorage?.getItem(BANDWIDTH_STORAGE_KEY);
         if (!raw) return null;
-        const entry = JSON.parse(raw) as Partial<BandwidthCacheEntry> | null;
-        if (typeof entry?.kbps === 'number' && typeof entry.expiresAt === 'number' && entry.expiresAt > Date.now()) {
-            memoryBandwidth = { kbps: entry.kbps, expiresAt: entry.expiresAt };
-            return entry.kbps;
+        const entry = JSON.parse(raw) as Partial<StoredBandwidth> | null;
+        if (typeof entry?.kbps === 'number' && typeof entry.expiresAt === 'number') {
+            return { kbps: entry.kbps, expiresAt: entry.expiresAt };
         }
     } catch {
-        // Stockage indisponible : on mesure à nouveau.
+        // Entrée illisible ou stockage indisponible : aucune mesure connue.
     }
     return null;
 };
 
-const writeCachedBandwidth = (kbps: number): void => {
-    const entry: BandwidthCacheEntry = { kbps, expiresAt: Date.now() + BANDWIDTH_CACHE_TTL_MS };
-    memoryBandwidth = entry;
+const writeStoredBandwidth = (entry: StoredBandwidth): void => {
     try {
-        globalThis.sessionStorage?.setItem(BANDWIDTH_STORAGE_KEY, JSON.stringify(entry));
+        globalThis.localStorage?.setItem(BANDWIDTH_STORAGE_KEY, JSON.stringify(entry));
     } catch {
-        // Quota dépassé ou navigation privée : le cache mémoire suffit.
+        // Quota dépassé ou navigation privée : la mesure sera refaite à la prochaine lecture.
     }
 };
 
 /**
- * Débit d'une lecture brute de `url` : lit au plus BANDWIDTH_PROBE_BYTES (Range demandé, mais un serveur
- * qui ignore Range ne renvoie jamais plus), abandonne après BANDWIDTH_TIMEOUT_MS. Null si échec.
+ * Télécharge au plus BANDWIDTH_MEASURE_BYTES en BANDWIDTH_MEASURE_MS (flux lu morceau par morceau, puis annulé).
+ * Renvoie le débit en kbps, ou null si trop peu d'octets ont été reçus ou si le téléchargement a échoué.
  */
-const probeUrlKbps = async (url: string): Promise<number | null> => {
+const measureDownloadKbps = async (): Promise<number | null> => {
     if (typeof fetch !== 'function') return null;
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    const timer = setTimeout(() => controller?.abort(), BANDWIDTH_TIMEOUT_MS);
+    const timer = setTimeout(() => controller?.abort(), BANDWIDTH_MEASURE_MS);
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+    let received = 0;
+    const startedAt = now();
     try {
-        const response = await fetch(url, {
-            headers: { Range: `bytes=0-${BANDWIDTH_PROBE_BYTES - 1}` },
-            cache: 'no-store',
-            signal: controller?.signal,
-        });
-        const reader = response.ok && response.body ? response.body.getReader() : null;
-        if (!reader) return null;
-        const startedAt = now();
-        let received = 0;
-        while (received < BANDWIDTH_PROBE_BYTES) {
+        const response = await fetch(BANDWIDTH_MEASURE_URL, { cache: 'no-store', signal: controller?.signal });
+        if (!response.ok || !response.body) return null;
+        reader = response.body.getReader();
+        while (received < BANDWIDTH_MEASURE_BYTES) {
             const { done, value } = await reader.read();
             if (done) break;
             received += value?.byteLength ?? 0;
         }
-        const elapsedSeconds = (now() - startedAt) / 1000;
-        await reader.cancel().catch(() => undefined);
-        const bytes = Math.min(received, BANDWIDTH_PROBE_BYTES);
-        if (bytes < BANDWIDTH_MIN_PROBE_BYTES || elapsedSeconds <= 0) return null;
-        return (bytes * 8) / 1000 / elapsedSeconds;
     } catch {
-        return null;
+        // Délai dépassé ou réseau coupé : on garde ce qui a été reçu avant.
     } finally {
         clearTimeout(timer);
+        await reader?.cancel().catch(() => undefined);
+        controller?.abort();
     }
+    const elapsedSeconds = (now() - startedAt) / 1000;
+    const bytes = Math.min(received, BANDWIDTH_MEASURE_BYTES);
+    if (bytes < BANDWIDTH_MIN_MEASURE_BYTES || elapsedSeconds <= 0) return null;
+    return (bytes * 8) / 1000 / elapsedSeconds;
+};
+
+const measureAndStore = async (): Promise<number | null> => {
+    const kbps = await measureDownloadKbps();
+    if (kbps !== null) writeStoredBandwidth({ kbps, expiresAt: Date.now() + BANDWIDTH_STORED_TTL_MS });
+    return kbps;
 };
 
 /**
- * Débit disponible en kbps, mis en cache 10 minutes (mémoire puis sessionStorage).
- * Combine navigator.connection.downlink et une mesure courte sur `url` (le stream choisi), à défaut sur
- * un petit fichier de l'application. Renvoie null si aucune estimation n'est possible.
+ * « Tester ma connexion » : mesure maintenant, quel que soit le réglage, et garde le résultat 24 h.
+ * Renvoie le débit en kbps, ou null si la mesure a échoué.
  */
-export const measureBandwidthKbps = async (url?: string | null): Promise<number | null> => {
-    const cached = readCachedBandwidth();
-    if (cached !== null) return cached;
+export const testBandwidthKbps = (): Promise<number | null> => measureAndStore();
 
-    const networkKbps = readNetworkKbps();
-    const probeKbps = await probeUrlKbps(url ?? BANDWIDTH_FALLBACK_PROBE_URL);
-    const kbps = combineBandwidthKbps(networkKbps, probeKbps);
-    if (kbps !== null) writeCachedBandwidth(kbps);
-    return kbps;
+/**
+ * Débit retenu pour le choix de la source : réglage fixe (Mb/s), sinon dernière mesure valable (24 h), sinon une
+ * nouvelle mesure. Renvoie null si rien n'est connu : aucun filtre de débit n'est alors appliqué.
+ */
+export const measureBandwidthKbps = async (): Promise<number | null> => {
+    const plan = planBandwidth(getBandwidthSetting(), readStoredBandwidth(), Date.now());
+    if (plan.kind === 'manual' || plan.kind === 'stored') return plan.kbps;
+    return measureAndStore();
+};
+
+/**
+ * Appelé à chaque blocage de lecture (événement « buffering » du lecteur). Au-delà du seuil, la mesure stockée
+ * baisse de 30 % : le choix de source devient plus prudent. Sans mesure stockée, rien à faire.
+ */
+let stallEvents: number[] = [];
+export const reportBufferingStall = (at: number = Date.now()): void => {
+    const result = registerStallEvent(stallEvents, at);
+    stallEvents = result.events;
+    if (!result.lower) return;
+    const stored = readStoredBandwidth();
+    if (stored) writeStoredBandwidth({ kbps: stored.kbps * BANDWIDTH_STALL_PENALTY, expiresAt: stored.expiresAt });
 };
 
 /**
  * Choisit la source de lecture automatique : meilleur score parmi les streams scorés dont le débit estimé
  * tient dans 80 % de `bwKbps` (estBitrateKbps absent : accepté ; bwKbps null : pas de filtre de débit).
- * Préfère la langue demandée ; sinon renvoie la meilleure source avec languageFallback à true.
- * Renvoie null si aucune source ne convient (le drawer doit alors s'ouvrir).
+ * Une VF qui tient le débit est préférée, même en qualité inférieure. Sinon : repli VO, avec la raison
+ * « no-vf » si aucune source de toute la liste n'est en VF, « vf-too-heavy » si une VF existe mais dépasse le débit.
+ * Renvoie null si aucune source ne tient le débit (le drawer doit alors s'ouvrir).
  */
 export const pickAutoplay = <T extends object>(
     streams: readonly T[],
@@ -212,16 +248,21 @@ export const pickAutoplay = <T extends object>(
         ? Infinity
         : Math.max(0, bwKbps) * BANDWIDTH_HEADROOM;
 
-    const fitting: { stream: T; info: LastStreamInfo }[] = [];
+    const scored: { stream: T; info: LastStreamInfo }[] = [];
     sortStreams(streams).forEach((stream) => {
         const info = getLaststream(stream);
-        if (!info) return;
-        if (info.estBitrateKbps !== null && info.estBitrateKbps > budgetKbps) return;
-        fitting.push({ stream, info });
+        if (info) scored.push({ stream, info });
     });
+    const fitting = scored.filter(({ info }) => info.estBitrateKbps === null || info.estBitrateKbps <= budgetKbps);
     if (fitting.length === 0) return null;
 
     const preferred = fitting.find(({ info }) => matchesLanguage(info, preferredLang));
     if (preferred) return { stream: preferred.stream, languageFallback: false };
-    return { stream: fitting[0].stream, languageFallback: true };
+
+    const anyPreferredInFullList = scored.some(({ info }) => matchesLanguage(info, preferredLang));
+    return {
+        stream: fitting[0].stream,
+        languageFallback: true,
+        fallbackReason: anyPreferredInFullList ? 'vf-too-heavy' : 'no-vf',
+    };
 };

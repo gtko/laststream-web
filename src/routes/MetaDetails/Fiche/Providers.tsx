@@ -16,6 +16,15 @@ type Props = {
     providers: FicheProviders | null;
 };
 
+// Seuls les liens https sont ouverts : une autre adresse (javascript:, http:) n’est jamais un lien cliquable.
+const isHttpsLink = (href: string): boolean => {
+    try {
+        return new URL(href).protocol === 'https:';
+    } catch {
+        return false;
+    }
+};
+
 const Providers = ({ providers }: Props) => {
     const { t } = useTranslation();
 
@@ -52,7 +61,7 @@ const Providers = ({ providers }: Props) => {
         );
     });
 
-    if (providers.link === '') {
+    if (providers.link === '' || !isHttpsLink(providers.link)) {
         return <div className={styles['providers']}>{content}</div>;
     }
 

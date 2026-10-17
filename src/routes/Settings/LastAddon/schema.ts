@@ -53,6 +53,15 @@ const OPTION_LABELS: Record<string, string> = {
 /** Champ secret (clé ou jeton) : saisi dans un champ mot de passe, jamais affiché ni conservé. */
 export const isSecretKey = (name: string): boolean => /(Key|Token)$/.test(name);
 
+/** Secret déjà enregistré côté serveur, tel que renvoyé par /config/decode : `{set: true, last4}`. */
+export type SecretMask = { set: true, last4?: string };
+
+export const maskOf = (value: unknown): SecretMask | null => (
+    typeof value === 'object' && value !== null && (value as { set?: unknown }).set === true
+        ? value as SecretMask
+        : null
+);
+
 export const fieldsOf = (node?: SchemaNode): [string, SchemaNode][] => Object.entries(node?.properties ?? {});
 
 /** Champs qu'on sait saisir : booléens, nombres, textes, choix uniques et listes de choix. Les const et objets sont ignorés. */
@@ -129,6 +138,8 @@ export const buildValue = (node: SchemaNode | undefined, value: unknown): unknow
             return text === '' || !Number.isFinite(parsed) ? undefined : parsed;
         }
         case 'string': {
+            // Secret enregistré et non ressaisi : `{set: true}` demande au serveur de garder la valeur précédente.
+            if (maskOf(value)) return { set: true };
             if (typeof value !== 'string') return undefined;
             const trimmed = value.trim();
             return trimmed === '' ? undefined : trimmed;

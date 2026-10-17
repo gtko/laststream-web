@@ -12,6 +12,7 @@ const ServicesToaster = require('./ServicesToaster');
 const SearchParamsHandler = require('./SearchParamsHandler');
 const DeepLinkHandler = require('./DeepLinkHandler');
 const { default: ShellOpenHandler } = require('./ShellOpenHandler');
+const { cancelQueuedRequests } = require('stremio/common/lastAddon/transport');
 const { default: UpdaterBanner } = require('./UpdaterBanner');
 const { default: ShortcutsModal } = require('./ShortcutsModal');
 const { default: GamepadModal } = require('./GamepadModal');
@@ -81,6 +82,10 @@ const App = () => {
             });
         }
     }, [locationPath, core.transport]);
+
+    // Changement de page : les requêtes LastAddon encore en file d'attente ne servent plus. Le nettoyage de cet effet
+    // s'exécute avant les effets des pages suivantes, qui peuvent alors lancer leurs propres requêtes.
+    React.useEffect(() => cancelQueuedRequests, [locationPath]);
 
     React.useEffect(() => {
         const onChromecastStateChange = () => {

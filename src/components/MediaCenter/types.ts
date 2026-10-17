@@ -20,6 +20,8 @@ export type MediaItem = {
     vote?: number | null,
     caption?: string | null,
     progress?: number | null,
+    // Dernier visionnage (ms epoch) pour les titres de la bibliothèque.
+    lastWatched?: number | null,
     upcomingDate?: string | null,
     badge?: MediaBadge | null,
 };

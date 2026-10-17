@@ -10,6 +10,7 @@ import useContinueWatchingPreview from './useContinueWatchingPreview';
 import {
     loadChannels,
     loadHero,
+    digestOf,
     loadRecommend,
     loadTmdbRow,
     loadTop10,
@@ -105,7 +106,7 @@ export const LibraryRow = ({ items }: { items: MediaItem[] }) => {
 
 export const AiRow = ({ history }: { history: MediaItem[] }) => {
     const { t } = useTranslation();
-    const key = history.length > 0 ? `ai:${history.slice(0, 20).map((item) => item.key).join(',')}` : null;
+    const key = history.length > 0 ? `ai:${digestOf(history.map((item) => item.key))}` : null;
     const state = useAsyncData(key, () => loadRecommend(history));
     if (key === null) return null;
     if (state.status === 'error' || (state.status === 'ready' && (state.data ?? []).length === 0)) return null;

@@ -13,42 +13,17 @@ import styles from './TvLive.less';
 const STALL_TIMEOUT_MS = 20000;
 const BANNER_TIMEOUT_MS = 4000;
 const DIRECT_FILE_PATTERN = /\.(mp4|webm|mkv|ts)(\?|$)/i;
-const HLS_SCRIPT_URL = 'https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js';
+// hls.js est une dépendance du projet, chargée à la demande : seulement si le navigateur ne lit pas HLS nativement.
+type HlsClass = typeof import('hls.js').default;
+let hlsLoader: Promise<HlsClass | null> | null = null;
 
-type HlsInstance = {
-    on: (event: string, listener: (...args: unknown[]) => void) => void,
-    loadSource: (url: string) => void,
-    attachMedia: (element: HTMLVideoElement) => void,
-    destroy: () => void,
-};
-
-type HlsConstructor = {
-    new (config?: Record<string, unknown>): HlsInstance,
-    isSupported: () => boolean,
-    Events: { ERROR: string, MANIFEST_PARSED: string },
-};
-
-type HlsWindow = Window & { Hls?: HlsConstructor };
-
-let hlsLoader: Promise<HlsConstructor | null> | null = null;
-
-// hls.js n'est pas une dépendance directe du projet : chargé à la demande, seulement si le navigateur ne lit pas HLS.
-const loadHls = (): Promise<HlsConstructor | null> => {
-    const existing = (window as HlsWindow).Hls;
-    if (existing) return Promise.resolve(existing);
-
-    if (!hlsLoader) {
-        hlsLoader = new Promise<HlsConstructor | null>((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = HLS_SCRIPT_URL;
-            script.crossOrigin = 'anonymous';
-            script.onload = () => resolve((window as HlsWindow).Hls ?? null);
-            script.onerror = () => reject(new Error('hls.js unavailable'));
-            document.head.appendChild(script);
-        });
-        hlsLoader.catch(() => {
-            hlsLoader = null;
-        });
+const loadHls = (): Promise<HlsClass | null> => {
+    if (hlsLoader === null) {
+        const loading: Promise<HlsClass | null> = import('hls.js')
+            // Typage « nodenext » : default est vu comme le namespace ; au runtime (webpack, ESM) c'est la classe Hls.
+            .then((module) => module.default as unknown as HlsClass)
+            .catch(() => null);
+        hlsLoader = loading;
     }
     return hlsLoader;
 };
@@ -65,7 +40,7 @@ type Props = {
 const TvPlayer = ({ channels, index, programsOf, onIndexChange, onClose, onPlayed }: Props) => {
     const { t, i18n } = useTranslation();
     const videoRef = useRef<HTMLVideoElement>(null);
-    const hlsRef = useRef<HlsInstance | null>(null);
+    const hlsRef = useRef<InstanceType<HlsClass> | null>(null);
     const [failed, setFailed] = useState(false);
     const [bannerTimed, setBannerTimed] = useState(true);
     const [bannerSticky, setBannerSticky] = useState(false);
@@ -122,18 +97,18 @@ const TvPlayer = ({ channels, index, programsOf, onIndexChange, onClose, onPlaye
                 play();
             } else {
                 loadHls()
-                    .then((Hls) => {
+                    .then((HlsPlayer) => {
                         if (!active) return;
-                        if (!Hls || !Hls.isSupported()) {
+                        if (!HlsPlayer || !HlsPlayer.isSupported()) {
                             fail();
                             return;
                         }
-                        const hls = new Hls({ maxBufferLength: 20 });
+                        const hls = new HlsPlayer({ maxBufferLength: 20 });
                         hlsRef.current = hls;
-                        hls.on(Hls.Events.ERROR, (_event, data) => {
-                            if ((data as { fatal?: boolean })?.fatal) fail();
+                        hls.on(HlsPlayer.Events.ERROR, (_event, data) => {
+                            if (data.fatal) fail();
                         });
-                        hls.on(Hls.Events.MANIFEST_PARSED, play);
+                        hls.on(HlsPlayer.Events.MANIFEST_PARSED, play);
                         hls.loadSource(src);
                         hls.attachMedia(video);
                     })

@@ -56,12 +56,42 @@ export const writeLastChannel = (channel: TvChannel): void => {
 /** Configuration de la playlist personnelle (même forme que la requête d'import LastAddon). */
 export const readPlaylist = (): TvImportRequest | null => {
     const value = readJson<TvImportRequest | null>(PLAYLIST_KEY, null);
-    if (!value) return null;
+    if (!value || typeof value !== 'object') return null;
     if (value.type === 'm3u' && typeof value.url === 'string') return value;
-    if (value.type === 'xtream' && typeof value.server === 'string' && typeof value.username === 'string') return value;
+    if (
+        value.type === 'xtream'
+        && typeof value.server === 'string'
+        && typeof value.username === 'string'
+        && typeof value.password === 'string'
+    ) {
+        return value;
+    }
     return null;
 };
 
-export const writePlaylist = (playlist: TvImportRequest): void => writeJson(PLAYLIST_KEY, playlist);
+// Chaînes issues de l'import de la playlist personnelle, gardées 6 h en mémoire (jamais sur disque, sans identifiants).
+const USER_CHANNELS_TTL_MS = 6 * 60 * 60 * 1000;
+let userChannelsCache: { channels: TvChannel[], expiresAt: number } | null = null;
 
-export const clearPlaylist = (): void => removeKey(PLAYLIST_KEY);
+export const readUserChannelsCache = (now: number = Date.now()): TvChannel[] | null => (
+    userChannelsCache && userChannelsCache.expiresAt > now ? userChannelsCache.channels : null
+);
+
+export const writeUserChannelsCache = (channels: TvChannel[], now: number = Date.now()): void => {
+    userChannelsCache = { channels, expiresAt: now + USER_CHANNELS_TTL_MS };
+};
+
+export const clearUserChannelsCache = (): void => {
+    userChannelsCache = null;
+};
+
+export const writePlaylist = (playlist: TvImportRequest): void => {
+    clearUserChannelsCache();
+    writeJson(PLAYLIST_KEY, playlist);
+};
+
+/** Oublier ma playlist : retire la configuration du stockage local et les chaînes importées de la mémoire. */
+export const clearPlaylist = (): void => {
+    clearUserChannelsCache();
+    removeKey(PLAYLIST_KEY);
+};

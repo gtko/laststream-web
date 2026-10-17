@@ -8,3 +8,4 @@ export * from './configurator';
 export * from './stream';
 export * from './types';
 export * from './useLastAddon';
+export * from './segments';

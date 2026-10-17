@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { tvChannels, tvEpg, tvImport } from 'stremio/common/lastAddon';
 import type { TvChannel, TvEpgProgram } from 'stremio/common/lastAddon';
-import { readPlaylist } from './tvStorage';
+import { readPlaylist, readUserChannelsCache, writeUserChannelsCache } from './tvStorage';
 
 const EPG_CHUNK_SIZE = 40;
+// Une chaîne dont le programme a échoué est redemandée au plus une fois par minute.
+const EPG_RETRY_MS = 60 * 1000;
 
 export type LoadState = 'loading' | 'ready' | 'error';
 
@@ -47,12 +49,22 @@ export const useTvChannels = (enabled: boolean) => {
             return undefined;
         }
 
+        // Résultat d'import gardé 6 h en mémoire, sans identifiants : pas de nouvel import à chaque ouverture de la TV.
+        const cached = readUserChannelsCache();
+        if (cached) {
+            setUser(cached);
+            setUserError(false);
+            return undefined;
+        }
+
         let cancelled = false;
         // Seul le résultat est gardé : la requête d'import (identifiants compris) n'est jamais journalisée.
         tvImport(playlist)
             .then((response) => {
                 if (cancelled) return;
-                setUser(response.channels ?? []);
+                const channels = response.channels ?? [];
+                writeUserChannelsCache(channels);
+                setUser(channels);
                 setUserError(false);
             })
             .catch(() => {
@@ -81,12 +93,20 @@ export const useTvChannels = (enabled: boolean) => {
 /** Programmes des chaînes demandées sur la fenêtre [from, from + hours[ (secondes epoch). */
 export const useEpg = (channels: TvChannel[], from: number, hours: number) => {
     const [programs, setPrograms] = useState<Record<string, TvEpgProgram[]>>({});
+    const [retryTick, setRetryTick] = useState(0);
     const requested = useRef(new Set<string>());
+    // Heure de l'échec par chaîne : une chaîne en erreur n'est redemandée qu'après EPG_RETRY_MS.
+    const failedAt = useRef(new Map<string, number>());
     const keys = Array.from(new Set(channels.map(epgKeyOf).filter((key) => key.length > 0)));
     const keysKey = keys.join(',');
 
     useEffect(() => {
-        const missing = keysKey.split(',').filter((key) => key.length > 0 && !requested.current.has(key));
+        const now = Date.now();
+        const missing = keysKey.split(',').filter((key) => (
+            key.length > 0
+            && !requested.current.has(key)
+            && (failedAt.current.get(key) ?? Number.NEGATIVE_INFINITY) + EPG_RETRY_MS <= now
+        ));
         if (missing.length === 0) return;
         missing.forEach((key) => requested.current.add(key));
 
@@ -97,12 +117,24 @@ export const useEpg = (channels: TvChannel[], from: number, hours: number) => {
         }
 
         Promise.all(chunks.map((ids) => tvEpg(ids, from, to)
-            .then((list) => ({ ids, list }))
-            .catch(() => ({ ids, list: [] as TvEpgProgram[] }))))
+            .then((list) => ({ ids, list, ok: true }))
+            .catch(() => ({ ids, list: [] as TvEpgProgram[], ok: false }))))
             .then((results) => {
+                let failed = false;
+                results.forEach(({ ids, ok }) => {
+                    if (ok) return;
+                    failed = true;
+                    const failureTime = Date.now();
+                    ids.forEach((id) => {
+                        // Entrée retirée de « demandé » : la chaîne sera redemandée une fois le délai écoulé.
+                        requested.current.delete(id);
+                        failedAt.current.set(id, failureTime);
+                    });
+                });
                 setPrograms((previous) => {
                     const next = { ...previous };
-                    results.forEach(({ ids, list }) => {
+                    results.forEach(({ ids, list, ok }) => {
+                        if (!ok) return;
                         ids.forEach((id) => {
                             next[id] = [];
                         });
@@ -112,8 +144,9 @@ export const useEpg = (channels: TvChannel[], from: number, hours: number) => {
                     });
                     return next;
                 });
+                if (failed) window.setTimeout(() => setRetryTick((value) => value + 1), EPG_RETRY_MS);
             });
-    }, [keysKey, from, hours]);
+    }, [keysKey, from, hours, retryTick]);
 
     return programs;
 };

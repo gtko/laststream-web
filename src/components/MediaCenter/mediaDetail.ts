@@ -47,6 +47,7 @@ export type CoreMediaItem = {
     type: string,
     poster?: string | null,
     progress?: number | null,
+    state?: { lastWatched?: string | null } | null,
     deepLinks?: { metaDetailsVideos?: string | null, metaDetailsStreams?: string | null } | null,
 };
 
@@ -79,6 +80,7 @@ export const mapCoreItem = (raw: CoreMediaItem): MediaItem => ({
     href: getMetaDetailsHref(raw.deepLinks, true),
     poster: raw.poster || null,
     progress: typeof raw.progress === 'number' ? raw.progress : null,
+    lastWatched: typeof raw.state?.lastWatched === 'string' ? Date.parse(raw.state.lastWatched) || null : null,
 });
 
 export const metaDetailsHref = (type: MediaType, imdbId: string): string => (
@@ -119,15 +121,15 @@ const frProviders = (raw: TmdbDetailRaw): MediaDetail['providers'] => (
         .map((provider) => ({ name: provider.provider_name, logo: tmdbImage('w92', provider.logo_path) ?? '' }))
 );
 
-const resolveTmdbId = async (item: MediaItem): Promise<number | null> => {
+const resolveTmdbId = async (item: MediaItem, signal?: AbortSignal): Promise<number | null> => {
     if (typeof item.tmdbId === 'number') return item.tmdbId;
     if (!item.imdbId) return null;
-    const found = await findByExternalId(item.imdbId);
+    const found = await findByExternalId(item.imdbId, signal);
     return found?.tmdbId ?? null;
 };
 
-const loadDetail = async (item: MediaItem): Promise<MediaDetail | null> => {
-    const tmdbId = await resolveTmdbId(item);
+const loadDetail = async (item: MediaItem, signal?: AbortSignal): Promise<MediaDetail | null> => {
+    const tmdbId = await resolveTmdbId(item, signal);
     if (tmdbId === null) return null;
     const type: 'movie' | 'tv' = item.type === 'tv' ? 'tv' : 'movie';
     const append = type === 'tv'
@@ -136,7 +138,7 @@ const loadDetail = async (item: MediaItem): Promise<MediaDetail | null> => {
     const raw = await tmdb<TmdbDetailRaw>(`${type}/${tmdbId}`, {
         append_to_response: append,
         include_image_language: 'fr,en,null',
-    });
+    }, signal);
     let overview = raw.overview || '';
     if (!overview) {
         overview = await tmdb<{ overview?: string | null }>(`${type}/${tmdbId}`, { language: 'en-US' })
@@ -144,7 +146,7 @@ const loadDetail = async (item: MediaItem): Promise<MediaDetail | null> => {
     }
     const imdbId = raw.imdb_id || raw.external_ids?.imdb_id || null;
     if (imdbId) imdbCache.set(item.key, imdbId);
-    const ratings = await mdblist(type, imdbId || tmdbId).then((json) => json.ratings, () => null);
+    const ratings = await mdblist(type, imdbId || tmdbId, signal).then((json) => json.ratings, () => null);
     return {
         tmdbId,
         imdbId,
@@ -166,12 +168,13 @@ const loadDetail = async (item: MediaItem): Promise<MediaDetail | null> => {
 /**
  * Détail d’un titre (bande-annonce, logo, notes, fournisseurs). Mis en cache par `key`.
  * Requiert LastAddon configuré : sans configuration, renvoie null et le cache est vidé pour réessayer plus tard.
+ * `signal` annule le chargement (aperçu quitté) : le résultat est alors null et rien n’est mis en cache.
  */
-export const getMediaDetail = (item: MediaItem): Promise<MediaDetail | null> => {
+export const getMediaDetail = (item: MediaItem, signal?: AbortSignal): Promise<MediaDetail | null> => {
     if (item.type === 'channel') return Promise.resolve(null);
     const cached = detailCache.get(item.key);
     if (cached) return cached;
-    const request = loadDetail(item)
+    const request = loadDetail(item, signal)
         .catch(() => null)
         .then((detail) => {
             if (detail === null) detailCache.delete(item.key);

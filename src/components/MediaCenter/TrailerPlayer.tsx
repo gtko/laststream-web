@@ -87,7 +87,7 @@ const TrailerPlayer = ({ videoKey, muted, title, className }: Props) => {
 
     return (
         <div ref={boxRef} className={classnames(styles['trailer'], className)} aria-hidden="true">
-            <iframe ref={frameRef} title={title} tabIndex={-1} allow="autoplay; encrypted-media" src={src} onLoad={onLoad} />
+            <iframe ref={frameRef} title={title} tabIndex={-1} allow="autoplay; encrypted-media" referrerPolicy="strict-origin-when-cross-origin" src={src} onLoad={onLoad} />
         </div>
     );
 };

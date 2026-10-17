@@ -32,6 +32,9 @@ const usePlayer = require('./usePlayer');
 const { default: usePlayOnDevice } = require('./usePlayOnDevice');
 const { default: useCastDevice } = require('./useCastDevice');
 const { default: useKeyboardSeek } = require('./useKeyboardSeek');
+const { useSkipSegments } = require('./SkipSegments/useSkipSegments');
+const { default: SkipOverlay } = require('./SkipSegments/SkipOverlay');
+const { reportBufferingStall } = require('stremio/common/lastAddon/sources');
 const { default: usePlaybackSpeedHold } = require('./usePlaybackSpeedHold');
 const { default: useStatistics } = require('./useStatistics');
 const useVideo = require('./useVideo');
@@ -412,6 +415,24 @@ const Player = () => {
             handleNextVideoNavigation(deepLinks, profile.settings.bingeWatching, false);
         }
     }, [player.nextVideo, isEpg, handleNextVideoNavigation, profile.settings, cancelKeyboardSeek, nextVideo]);
+
+    // Intro, récap, générique : bouton « Passer », sauts automatiques et carte « Épisode suivant » (séries uniquement).
+    const skipSegments = useSkipSegments({
+        enabled: !isEpg,
+        streamPath: player.selected?.streamRequest?.path ?? null,
+        time: video.state.time,
+        nextVideo: isEpg ? null : player.nextVideo,
+        onSeek: onSeekRequested,
+        onAdvance: onNextVideoRequested,
+    });
+
+    // Un blocage de lecture (buffering pendant la lecture) compte pour le débit retenu par la lecture automatique.
+    const stalledRef = React.useRef(false);
+    React.useEffect(() => {
+        const stalled = video.state.buffering === true && video.state.paused === false;
+        if (stalled && !stalledRef.current) reportBufferingStall();
+        stalledRef.current = stalled;
+    }, [video.state.buffering, video.state.paused]);
 
     const onVideoClick = React.useCallback(() => {
         if (video.state.paused !== null && !consumePlaybackSpeedHoldClick()) {
@@ -1106,8 +1127,15 @@ const Player = () => {
                 videoState={video.state}
                 disabled={subtitlesMenuOpen || speedMenuOpen}
             />
+            <SkipOverlay
+                skipSegment={skipSegments.skipSegment}
+                onSkip={skipSegments.onSkip}
+                nextCard={skipSegments.nextCard}
+                onWatchCredits={skipSegments.onWatchCredits}
+                onPlayNext={onNextVideoRequested}
+            />
             {
-                nextVideoPopupOpen ?
+                nextVideoPopupOpen && skipSegments.nextCard === null ?
                     <NextVideoPopup
                         className={classnames(styles['layer'], styles['menu-layer'])}
                         metaItem={metaItemContent}

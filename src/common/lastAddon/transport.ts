@@ -91,28 +91,53 @@ const readErrorCode = async (response: Response): Promise<string | undefined> =>
 };
 
 let inFlight = 0;
-const waiting: (() => void)[] = [];
+
+type Waiter = {
+    grant: () => void,
+    reject: (error: Error) => void,
+};
+const waiting: Waiter[] = [];
+
+const abortError = (): Error => new DOMException('Requête LastAddon annulée.', 'AbortError');
 
 // Un créneau libéré passe directement au premier en attente (FIFO) ; `inFlight` ne redescend qu'à vide.
-const acquireSlot = (): Promise<void> => {
+// Une requête annulée pendant l'attente quitte la file sans jamais occuper de créneau.
+const acquireSlot = (signal?: AbortSignal): Promise<void> => {
+    if (signal?.aborted) return Promise.reject(abortError());
     if (inFlight < MAX_IN_FLIGHT) {
         inFlight += 1;
         return Promise.resolve();
     }
-    return new Promise<void>((resolve) => {
-        waiting.push(resolve);
+    return new Promise<void>((resolve, reject) => {
+        const waiter: Waiter = { grant: resolve, reject };
+        waiting.push(waiter);
+        signal?.addEventListener('abort', () => {
+            const index = waiting.indexOf(waiter);
+            if (index !== -1) {
+                waiting.splice(index, 1);
+                reject(abortError());
+            }
+        }, { once: true });
     });
 };
 
 const releaseSlot = (): void => {
     const next = waiting.shift();
-    if (next) next();
+    if (next) next.grant();
     else inFlight -= 1;
 };
 
-/** Exécute `task` dès qu'un des MAX_IN_FLIGHT créneaux est libre. */
-const limited = async <T>(task: () => Promise<T>): Promise<T> => {
-    await acquireSlot();
+/**
+ * Annule les requêtes en attente de créneau (changement de page : elles ne servent plus). Les requêtes déjà
+ * en vol ne sont pas touchées, elles alimentent le cache. Renvoie à React comme nettoyage d'effet.
+ */
+export const cancelQueuedRequests = (): void => {
+    waiting.splice(0).forEach((waiter) => waiter.reject(abortError()));
+};
+
+/** Exécute `task` dès qu'un des MAX_IN_FLIGHT créneaux est libre, ou échoue si `signal` est annulé avant. */
+const limited = async <T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> => {
+    await acquireSlot(signal);
     try {
         return await task();
     } finally {
@@ -123,9 +148,13 @@ const limited = async <T>(task: () => Promise<T>): Promise<T> => {
 export type RequestOptions = {
     method?: 'GET' | 'POST';
     body?: unknown;
+    signal?: AbortSignal;
 };
 
-/** Requête JSON sans cache, à concurrence bornée. Toute erreur est remontée sous forme de LastAddonError. */
+/**
+ * Requête JSON sans cache, à concurrence bornée. `signal` annule la requête (en attente ou en vol).
+ * Toute autre erreur est remontée sous forme de LastAddonError.
+ */
 export const requestJson = async <T>(url: string, options: RequestOptions = {}): Promise<T> => {
     const method = options.method ?? 'GET';
     const headers: Record<string, string> = { accept: 'application/json' };
@@ -137,8 +166,9 @@ export const requestJson = async <T>(url: string, options: RequestOptions = {}):
 
     let response: Response;
     try {
-        response = await limited(() => fetch(url, { method, headers, body }));
-    } catch {
+        response = await limited(() => fetch(url, { method, headers, body, signal: options.signal }), options.signal);
+    } catch (error) {
+        if (options.signal?.aborted) throw error;
         throw new LastAddonError('network', 'LastAddon is unreachable.');
     }
 

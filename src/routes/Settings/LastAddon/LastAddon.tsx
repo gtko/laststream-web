@@ -4,10 +4,29 @@ import React, { forwardRef, useCallback, useEffect, useState } from 'react';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
 import { useCore } from 'stremio/core';
-import { Button, TextInput, Toggle } from 'stremio/components';
+import { Button, MultiselectMenu, TextInput, Toggle } from 'stremio/components';
 import { useToast } from 'stremio/common';
-import { encodeConfig, getSchema, setBase, setConfig, useLastAddon } from 'stremio/common/lastAddon';
-import { getAutoplay, setAutoplay } from 'stremio/common/lastAddon/prefs';
+import {
+    decodeConfig,
+    encodeConfig,
+    getConfig,
+    getSchema,
+    setBase,
+    setConfig,
+    useLastAddon,
+} from 'stremio/common/lastAddon';
+import {
+    getAutoplay,
+    getBandwidthSetting,
+    getSkipPref,
+    setAutoplay,
+    setBandwidthSetting,
+    setSkipPref,
+    BANDWIDTH_PRESETS_MBPS,
+    type BandwidthSetting,
+    type SkipPrefName,
+} from 'stremio/common/lastAddon/prefs';
+import { testBandwidthKbps } from 'stremio/common/lastAddon/sources';
 import { Category, Option, Section } from '../components';
 import ConfigForm from './ConfigForm';
 import { describeError, installedAddonsOf, installLastAddon } from './actions';
@@ -30,11 +49,19 @@ const LastAddon = forwardRef<HTMLDivElement, Props>(({ profile }: Props, ref) =>
     const [schema, setSchema] = useState<SchemaNode | null>(null);
     const [schemaError, setSchemaError] = useState<string | null>(null);
     const [reloadToken, setReloadToken] = useState(0);
-    // Valeurs du formulaire, clés comprises : elles restent en mémoire de la section et partent dans /config/encode.
+    // Valeurs du formulaire. Les secrets déjà enregistrés y figurent masqués (`{set, last4}`), jamais en clair.
     const [draft, setDraft] = useState<Draft>({});
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
     const [autoplay, setAutoplayState] = useState(getAutoplay);
+    const [bandwidth, setBandwidthState] = useState<BandwidthSetting>(getBandwidthSetting);
+    const [bandwidthTesting, setBandwidthTesting] = useState(false);
+    const [bandwidthMessage, setBandwidthMessage] = useState<string | null>(null);
+    const [skipPrefs, setSkipPrefsState] = useState(() => ({
+        intro: getSkipPref('intro'),
+        recap: getSkipPref('recap'),
+        nextEpisode: getSkipPref('nextEpisode'),
+    }));
 
     useEffect(() => {
         setBaseInput(snapshot.base);
@@ -46,11 +73,14 @@ const LastAddon = forwardRef<HTMLDivElement, Props>(({ profile }: Props, ref) =>
         if (snapshot.base === '') return undefined;
 
         let cancelled = false;
-        getSchema().then((document) => {
+        getSchema().then(async (document) => {
             if (cancelled) return;
             const root = document as SchemaNode;
             setSchema(root);
-            setDraft(defaultsOf(root) as Draft);
+            // Configuration déjà enregistrée : le formulaire reprend ses valeurs. Sans /config/decode, il garde ses défauts.
+            const saved = getConfig() === '' ? null : await decodeConfig(getConfig());
+            if (cancelled) return;
+            setDraft({ ...(defaultsOf(root) as Draft), ...(saved ?? {}) });
         }).catch((error) => {
             if (!cancelled) setSchemaError(describeError(error));
         });
@@ -82,9 +112,11 @@ const LastAddon = forwardRef<HTMLDivElement, Props>(({ profile }: Props, ref) =>
         setSaving(true);
         setSaveError(null);
         try {
-            const encoded = await encodeConfig(buildPayload(schema, draft));
-            setConfig(encoded);
+            // Les secrets laissés vides (ou masqués) sont gardés depuis la configuration précédente.
+            const encoded = await encodeConfig(buildPayload(schema, draft), getConfig() || undefined);
+            // La configuration n'est enregistrée qu'une fois l'addon installé : un échec ne laisse pas un état à moitié écrit.
             await installLastAddon(encoded, installedAddonsOf(profile), core.transport.dispatch);
+            setConfig(encoded);
             toast.show({
                 type: 'success',
                 title: t('LASTADDON_SAVED', { defaultValue: 'LastAddon est configuré et installé.' }),
@@ -104,6 +136,42 @@ const LastAddon = forwardRef<HTMLDivElement, Props>(({ profile }: Props, ref) =>
     }, [autoplay]);
 
     const autoplayToggle = { checked: autoplay, onClick: onToggleAutoplay };
+
+    const onToggleSkip = useCallback((name: SkipPrefName) => {
+        const next = !skipPrefs[name];
+        setSkipPref(name, next);
+        setSkipPrefsState((current) => ({ ...current, [name]: next }));
+    }, [skipPrefs]);
+
+    const skipToggleOf = (name: SkipPrefName) => ({ checked: skipPrefs[name], onClick: () => onToggleSkip(name) });
+
+    const bandwidthLabel = bandwidth === 'auto'
+        ? t('LASTADDON_BANDWIDTH_AUTO', { defaultValue: 'Auto (mesure)' })
+        : `${bandwidth} Mb/s`;
+    const bandwidthOptions = [
+        { label: t('LASTADDON_BANDWIDTH_AUTO', { defaultValue: 'Auto (mesure)' }), value: 'auto' },
+        ...BANDWIDTH_PRESETS_MBPS.map((mbps) => ({ label: `${mbps} Mb/s`, value: String(mbps) })),
+    ];
+
+    const onBandwidthSelect = useCallback((value: string) => {
+        const next: BandwidthSetting = value === 'auto' ? 'auto' : Number(value);
+        setBandwidthSetting(next);
+        setBandwidthState(next);
+        setBandwidthMessage(null);
+    }, []);
+
+    const onTestBandwidth = useCallback(async () => {
+        setBandwidthTesting(true);
+        setBandwidthMessage(null);
+        try {
+            const kbps = await testBandwidthKbps();
+            setBandwidthMessage(kbps === null ?
+                t('LASTADDON_BANDWIDTH_FAILED', { defaultValue: 'Mesure impossible pour le moment. Réessaie.' }) :
+                t('LASTADDON_BANDWIDTH_RESULT', { defaultValue: 'Débit mesuré : {{mbps}} Mb/s', mbps: (kbps / 1000).toFixed(1) }));
+        } finally {
+            setBandwidthTesting(false);
+        }
+    }, [t]);
 
     return (
         <Section ref={ref} label={t('LASTADDON_NAV', { defaultValue: 'LastAddon' })}>
@@ -160,7 +228,7 @@ const LastAddon = forwardRef<HTMLDivElement, Props>(({ profile }: Props, ref) =>
                         <ConfigForm schema={schema} draft={draft} onChange={onChange} />
                         <div className={styles['actions']}>
                             <div className={styles['hint']}>
-                                {t('LASTADDON_KEYS_HINT', { defaultValue: 'Les clés ne sont pas conservées sur cet appareil : ressaisis-les à chaque enregistrement.' })}
+                                {t('LASTADDON_KEYS_HINT', { defaultValue: 'Les clés enregistrées restent masquées : laisse un champ vide pour garder la clé actuelle.' })}
                             </div>
                             {
                                 saveError &&
@@ -179,6 +247,35 @@ const LastAddon = forwardRef<HTMLDivElement, Props>(({ profile }: Props, ref) =>
             <Category icon={'play'} label={t('LASTADDON_CATEGORY_PLAYBACK', { defaultValue: 'Lecture' })}>
                 <Option label={t('LASTADDON_AUTOPLAY', { defaultValue: 'Lecture automatique de la meilleure source' })}>
                     <Toggle tabIndex={-1} {...autoplayToggle} />
+                </Option>
+                <Option label={t('LASTADDON_BANDWIDTH', { defaultValue: 'Débit de ma connexion' })}>
+                    <MultiselectMenu
+                        className={'multiselect'}
+                        options={bandwidthOptions}
+                        value={String(bandwidth)}
+                        title={bandwidthLabel}
+                        onSelect={onBandwidthSelect}
+                    />
+                    <Button className={'button'} title={t('LASTADDON_BANDWIDTH_TEST', { defaultValue: 'Tester ma connexion' })} disabled={bandwidthTesting} onClick={onTestBandwidth}>
+                        {
+                            bandwidthTesting ?
+                                t('LASTADDON_TESTING', { defaultValue: 'Test…' }) :
+                                t('LASTADDON_BANDWIDTH_TEST', { defaultValue: 'Tester ma connexion' })
+                        }
+                    </Button>
+                </Option>
+                {
+                    bandwidthMessage &&
+                        <div className={styles['hint']} role={'status'}>{bandwidthMessage}</div>
+                }
+                <Option label={t('LASTADDON_SKIP_INTRO', { defaultValue: 'Passer automatiquement les intros' })}>
+                    <Toggle tabIndex={-1} {...skipToggleOf('intro')} />
+                </Option>
+                <Option label={t('LASTADDON_SKIP_RECAP', { defaultValue: 'Passer automatiquement les récaps' })}>
+                    <Toggle tabIndex={-1} {...skipToggleOf('recap')} />
+                </Option>
+                <Option label={t('LASTADDON_SKIP_NEXT', { defaultValue: 'Enchaîner l’épisode suivant' })}>
+                    <Toggle tabIndex={-1} {...skipToggleOf('nextEpisode')} />
                 </Option>
             </Category>
         </Section>

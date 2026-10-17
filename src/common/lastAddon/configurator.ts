@@ -17,16 +17,40 @@ export const getSchema = async (): Promise<ConfigSchemaDocument> => {
     return cachedRequest(`schema ${base}`, () => requestJson<ConfigSchemaDocument>(`${base}/config/schema`));
 };
 
-/** Chiffre une configuration (POST {base}/config/encode). Renvoie la chaîne à passer à setConfig. */
-export const encodeConfig = async (values: Record<string, unknown>): Promise<string> => {
+/**
+ * Chiffre une configuration (POST {base}/config/encode). Avec `previous` (configuration déjà enregistrée, chiffrée),
+ * le serveur garde les secrets que `values` laisse vides ou masqués : les clés n'ont pas à être ressaisies.
+ * Renvoie la chaîne à passer à setConfig.
+ */
+export const encodeConfig = async (values: Record<string, unknown>, previous?: string): Promise<string> => {
+    const body = previous ? { previous, config: values } : values;
     const response = await requestJson<EncodeConfigResponse>(`${requireBase()}/config/encode`, {
         method: 'POST',
-        body: values,
+        body,
     });
     if (typeof response.config !== 'string') {
         throw new LastAddonError('invalid_response', 'LastAddon encode response has no config string.');
     }
     return response.config;
+};
+
+/**
+ * Déchiffre la configuration enregistrée pour le formulaire (POST {base}/config/decode). Chaque secret revient
+ * masqué (`{set, last4}`), jamais sa valeur. Null si indisponible (404 d'un serveur ancien compris) : le formulaire
+ * garde alors ses valeurs par défaut.
+ */
+export const decodeConfig = async (encoded: string): Promise<Record<string, unknown> | null> => {
+    try {
+        const response = await requestJson<unknown>(`${requireBase()}/config/decode`, {
+            method: 'POST',
+            body: { config: encoded },
+        });
+        return typeof response === 'object' && response !== null && !Array.isArray(response)
+            ? response as Record<string, unknown>
+            : null;
+    } catch {
+        return null;
+    }
 };
 
 /**

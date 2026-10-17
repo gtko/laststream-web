@@ -6,11 +6,12 @@ import { useTranslation } from 'react-i18next';
 import { Button, TextInput } from 'stremio/components';
 import type { ServiceTestResult } from 'stremio/common/lastAddon';
 import { describeError } from './actions';
+import { maskOf } from './schema';
 import styles from './LastAddon.less';
 
 type Props = {
     value: unknown,
-    onChange: (value: string) => void,
+    onChange: (value: unknown) => void,
     onTest?: (key: string) => Promise<ServiceTestResult>,
 };
 
@@ -20,10 +21,12 @@ type TestOutcome = {
 };
 
 // Clé saisie en champ mot de passe. Seul le résultat du test est affiché, jamais la clé.
+// Une clé déjà enregistrée revient masquée (`{set, last4}`) : le champ reste vide, la clé est gardée tant qu'on ne tape rien.
 const SecretInput = ({ value, onChange, onTest }: Props) => {
     const { t } = useTranslation();
     const [testing, setTesting] = useState(false);
     const [outcome, setOutcome] = useState<TestOutcome | null>(null);
+    const mask = maskOf(value);
     const current = typeof value === 'string' ? value : '';
 
     // Un résultat ne vaut que pour la clé testée.
@@ -47,6 +50,11 @@ const SecretInput = ({ value, onChange, onTest }: Props) => {
         }
     }, [onTest, current, t]);
 
+    const onInput = useCallback((typed: string) => {
+        // Champ vidé : on revient au masque, la clé enregistrée n'est pas effacée.
+        onChange(typed === '' && mask ? mask : typed);
+    }, [mask, onChange]);
+
     return (
         <div className={styles['secret-input']}>
             <div className={styles['secret-row']}>
@@ -54,7 +62,10 @@ const SecretInput = ({ value, onChange, onTest }: Props) => {
                     className={styles['text-input']}
                     type={'password'}
                     value={current}
-                    onChange={(event) => onChange(event.currentTarget.value)}
+                    placeholder={mask ?
+                        t('LASTADDON_KEY_SAVED', { defaultValue: 'Clé enregistrée ({{last4}})', last4: mask.last4 ?? '' }) :
+                        undefined}
+                    onChange={(event) => onInput(event.currentTarget.value)}
                 />
                 {
                     onTest &&

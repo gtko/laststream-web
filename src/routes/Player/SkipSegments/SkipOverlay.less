@@ -1,0 +1,141 @@
+// Copyright (C) 2017-2026 Smart code 203358507
+
+.skip-button,
+.skip-pill,
+.skip-pill-ghost {
+  border: 0;
+  border-radius: 1.5rem;
+  padding: 0.6rem 1.2rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.skip-button,
+.skip-pill {
+  background: var(--primary-accent-color);
+  color: var(--primary-accent-foreground-color);
+}
+
+.skip-pill-ghost {
+  background: transparent;
+  color: var(--primary-foreground-color);
+  box-shadow: inset 0 0 0 1px var(--primary-foreground-color);
+}
+
+.skip-button {
+  position: absolute;
+  right: 2rem;
+  bottom: 9rem;
+  z-index: 3;
+}
+
+.skip-button:focus-visible,
+.skip-pill:focus-visible,
+.skip-pill-ghost:focus-visible {
+  outline: 2px solid var(--primary-accent-color);
+  outline-offset: 3px;
+}
+
+.next-card {
+  position: absolute;
+  right: 2rem;
+  bottom: 9rem;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  max-width: min(480px, calc(100vw - 4rem));
+  padding: 0.8rem;
+  border-radius: 0.8rem;
+  background: rgba(0, 0, 0, 0.75);
+  color: var(--primary-foreground-color);
+}
+
+.next-still {
+  flex: 0 0 160px;
+  aspect-ratio: 16 / 9;
+  border-radius: 0.4rem;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.next-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.next-label {
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.next-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.next-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.ring {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  transform: rotate(-90deg);
+}
+
+.ring-track,
+.ring-progress {
+  fill: none;
+  stroke-width: 3;
+}
+
+.ring-track {
+  stroke: rgba(255, 255, 255, 0.2);
+}
+
+.ring-progress {
+  stroke: var(--primary-accent-color);
+  transition: stroke-dashoffset 0.25s linear;
+}
+
+.ring-text {
+  fill: var(--primary-foreground-color);
+  font-size: 12px;
+  text-anchor: middle;
+  dominant-baseline: central;
+  transform: rotate(90deg);
+  transform-origin: 22px 22px;
+}
+
+@media (max-width: 600px) {
+  .next-card {
+    left: 1rem;
+    right: 1rem;
+    bottom: 7rem;
+    max-width: none;
+  }
+
+  .next-still {
+    flex-basis: 110px;
+  }
+
+  .skip-button {
+    right: 1rem;
+    bottom: 7rem;
+  }
+}

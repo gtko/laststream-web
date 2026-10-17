@@ -4,12 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import useToast from 'stremio/common/Toast/useToast';
 import { getAutoplay } from 'stremio/common/lastAddon/prefs';
-import {
-    getStreamHttpUrl,
-    measureBandwidthKbps,
-    pickAutoplay,
-    sortStreams,
-} from 'stremio/common/lastAddon/sources';
+import { measureBandwidthKbps, pickAutoplay } from 'stremio/common/lastAddon/sources';
 import { getPlayerHref } from './getStreamHref';
 
 export const STREAMS_TIMEOUT_MS = 8000;
@@ -100,6 +95,8 @@ export const useSourcesPlay = ({ streams, hasStreamPath, externalPlayer, onStart
         if (run === null || !settled || decidedRef.current === run.id) return;
         decidedRef.current = run.id;
         const isCurrent = () => runRef.current?.id === run.id;
+        // La décision démarre : l'attente de 8 s est terminée, elle ne doit plus ouvrir le drawer pendant la mesure.
+        clearTimer();
 
         // Seules les sources ouvrables dans le lecteur intégré sont candidates.
         const candidates = flattenReadyStreams(streams).filter((stream) => getPlayerHref(stream) !== null);
@@ -108,8 +105,7 @@ export const useSourcesPlay = ({ streams, hasStreamPath, externalPlayer, onStart
             return;
         }
 
-        const best = sortStreams(candidates)[0];
-        measureBandwidthKbps(getStreamHttpUrl(best)).then((bwKbps) => {
+        measureBandwidthKbps().then((bwKbps) => {
             if (!isCurrent()) return;
             const pick = pickAutoplay(candidates, bwKbps, PREFERRED_LANG);
             if (pick === null) {
@@ -119,15 +115,16 @@ export const useSourcesPlay = ({ streams, hasStreamPath, externalPlayer, onStart
             finish();
             const current = latestRef.current;
             if (pick.languageFallback) {
-                current.toast.show({
-                    type: 'info',
-                    title: current.t('SOURCES_VO_FALLBACK', { defaultValue: 'Pas de VF disponible, lecture en VO' }),
-                    timeout: LANGUAGE_FALLBACK_TOAST_MS,
-                });
+                const title = pick.fallbackReason === 'vf-too-heavy'
+                    ? current.t('SOURCES_VF_TOO_HEAVY', { defaultValue: 'VF trop lourde pour ta connexion, lecture en VO' })
+                    : current.t('SOURCES_VO_FALLBACK', { defaultValue: 'Pas de VF disponible, lecture en VO' });
+                current.toast.show({ type: 'info', title, timeout: LANGUAGE_FALLBACK_TOAST_MS });
             }
             current.onStartStream(pick.stream);
+        }).catch(() => {
+            if (isCurrent()) openDrawer();
         });
-    }, [pending, settled, streams, openDrawer, finish]);
+    }, [pending, settled, streams, openDrawer, finish, clearTimer]);
 
     useEffect(() => () => {
         runRef.current = null;

@@ -16,6 +16,13 @@ import styles from './styles.less';
 const TRAILER_DELAY_MS = 350;
 const CARD_MIN_WIDTH = 300;
 const CARD_MAX_WIDTH = 480;
+// Une seule rafale de requêtes d’aperçu par fenêtre : les survols rapides ne déclenchent pas une rafale chacun.
+const PREVIEW_BURST_MS = 1500;
+
+let lastPreviewFetchAt = Number.NEGATIVE_INFINITY;
+
+/** Délai avant la prochaine rafale d’aperçu (0 : tout de suite). */
+export const previewBurstDelay = (lastAt: number, now: number): number => Math.max(0, lastAt + PREVIEW_BURST_MS - now);
 
 type Props = {
     item: MediaItem,
@@ -37,13 +44,26 @@ const HoverPreview = ({ item, anchor, onClose }: Props) => {
     const width = Math.round(clamp(anchor.width * 1.5, CARD_MIN_WIDTH, CARD_MAX_WIDTH));
     const trailer = detail?.trailer ?? null;
 
+    // L’aperçu n’est chargé qu’après le délai de survol (Tile) ; quitter la tuile annule la requête en cours.
     useEffect(() => {
-        let active = true;
-        getMediaDetail(item).then((result) => {
-            if (active) setDetail(result);
-        });
+        const controller = new AbortController();
+        let timer: number | undefined;
+        const fetchDetail = () => {
+            const wait = previewBurstDelay(lastPreviewFetchAt, Date.now());
+            if (wait > 0) {
+                timer = window.setTimeout(fetchDetail, wait);
+                return;
+            }
+            timer = undefined;
+            lastPreviewFetchAt = Date.now();
+            getMediaDetail(item, controller.signal).then((result) => {
+                if (!controller.signal.aborted) setDetail(result);
+            }, () => undefined);
+        };
+        fetchDetail();
         return () => {
-            active = false;
+            window.clearTimeout(timer);
+            controller.abort();
         };
     }, [item]);
 

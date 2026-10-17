@@ -99,14 +99,66 @@ const toEntry = (item: MediaItem): RecommendEntry => ({
     type: item.type === 'tv' ? 'tv' : 'movie',
 });
 
-/** Recommandations IA à partir de l’historique de bibliothèque. La raison (`reason_fr`) sert de légende. */
+const RECOMMEND_TTL_MS = 30 * 60 * 1000;
+const RECOMMEND_STORAGE_PREFIX = 'laststream.ai.recommend:';
+
+/** Empreinte stable (FNV-1a 32 bits) d’une liste d’identifiants, indépendante de leur ordre. */
+export const digestOf = (ids: readonly string[]): string => {
+    const text = [...ids].sort().join('|');
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < text.length; index += 1) {
+        hash ^= text.charCodeAt(index);
+        hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return `${ids.length}-${hash.toString(16).padStart(8, '0')}`;
+};
+
+/** « Aimés » : les 5 titres vus le plus récemment (à défaut de date de visionnage, les 5 premiers). */
+export const likedOf = (history: MediaItem[]): MediaItem[] => {
+    const watched = history
+        .filter((item) => typeof item.lastWatched === 'number')
+        .sort((a, b) => (b.lastWatched ?? 0) - (a.lastWatched ?? 0));
+    return (watched.length > 0 ? watched : history).slice(0, 5);
+};
+
+const readRecommendCache = (digest: string): TmdbRaw[] | null => {
+    try {
+        const raw = globalThis.sessionStorage?.getItem(RECOMMEND_STORAGE_PREFIX + digest);
+        if (!raw) return null;
+        const entry = JSON.parse(raw) as { expiresAt?: unknown, items?: unknown } | null;
+        return typeof entry?.expiresAt === 'number' && entry.expiresAt > Date.now() && Array.isArray(entry.items)
+            ? entry.items as TmdbRaw[]
+            : null;
+    } catch {
+        return null;
+    }
+};
+
+const writeRecommendCache = (digest: string, items: TmdbRaw[]): void => {
+    try {
+        globalThis.sessionStorage?.setItem(RECOMMEND_STORAGE_PREFIX + digest, JSON.stringify({ expiresAt: Date.now() + RECOMMEND_TTL_MS, items }));
+    } catch {
+        // Quota dépassé ou stockage désactivé : la réponse sera redemandée plus tard.
+    }
+};
+
+/**
+ * Recommandations IA à partir de l’historique de bibliothèque, mises en cache 30 min (sessionStorage) selon une
+ * empreinte des identifiants. La raison (`reason_fr`) sert de légende.
+ */
 export const loadRecommend = async (history: MediaItem[]): Promise<MediaItem[]> => {
-    const json = await recommend({
-        history: history.slice(0, 20).map(toEntry),
-        liked: history.slice(0, 5).map(toEntry),
-    });
-    return (json.items ?? [])
-        .map((raw) => mapTmdbItem(raw as unknown as TmdbRaw))
+    const digest = digestOf(history.map((item) => item.key));
+    let items = readRecommendCache(digest);
+    if (items === null) {
+        const json = await recommend({
+            history: history.slice(0, 20).map(toEntry),
+            liked: likedOf(history).map(toEntry),
+        });
+        items = (json.items ?? []) as unknown as TmdbRaw[];
+        writeRecommendCache(digest, items);
+    }
+    return items
+        .map((raw) => mapTmdbItem(raw))
         .filter((item) => item.poster);
 };
 
