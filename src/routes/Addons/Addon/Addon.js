@@ -8,7 +8,7 @@ const { default: Icon } = require('@stremio/stremio-icons/react');
 const { Button, Image } = require('stremio/components');
 const styles = require('./styles');
 
-const Addon = ({ className, id, name, version, logo, description, types, behaviorHints, installed, onInstall, onUninstall, onConfigure, onOpen, onShare, dataset }) => {
+const Addon = ({ className, id, name, version, logo, description, types, behaviorHints, installed, reorderable, canMoveUp, canMoveDown, dragging, dropTarget, onInstall, onUninstall, onConfigure, onOpen, onShare, onMoveUp, onMoveDown, onDragStart, onDragOver, onDrop, onDragEnd, dataset }) => {
     const { t } = useTranslation();
     const onInstallClick = React.useCallback((event) => {
         event.stopPropagation();
@@ -70,11 +70,124 @@ const Addon = ({ className, id, name, version, logo, description, types, behavio
             onOpenClick(event);
         }
     }, [onOpenClick]);
+    const onMoveUpClick = React.useCallback((event) => {
+        event.stopPropagation();
+        if (typeof onMoveUp === 'function') {
+            onMoveUp({
+                type: 'moveUp',
+                nativeEvent: event.nativeEvent,
+                reactEvent: event,
+                dataset: dataset
+            });
+        }
+    }, [onMoveUp, dataset]);
+    const onMoveDownClick = React.useCallback((event) => {
+        event.stopPropagation();
+        if (typeof onMoveDown === 'function') {
+            onMoveDown({
+                type: 'moveDown',
+                nativeEvent: event.nativeEvent,
+                reactEvent: event,
+                dataset: dataset
+            });
+        }
+    }, [onMoveDown, dataset]);
+    const onReorderKeyDown = React.useCallback((event) => {
+        // Enter on a move button must not open the addon details through the row
+        if (event.key === 'Enter') {
+            event.stopPropagation();
+        }
+    }, []);
+    const onReorderMouseDownCapture = React.useCallback((event) => {
+        // The row Button cancels the default of mousedown, which would stop the drag handle from starting a drag
+        event.nativeEvent.buttonBlurPrevented = true;
+    }, []);
+    const onRowDragStart = React.useCallback((event) => {
+        // FileDrop cancels every dragstart reaching window, which would cancel the row drag
+        event.stopPropagation();
+        if (typeof onDragStart === 'function') {
+            onDragStart({
+                type: 'dragstart',
+                nativeEvent: event.nativeEvent,
+                reactEvent: event,
+                dataset: dataset
+            });
+        }
+    }, [onDragStart, dataset]);
+    const onRowDragOver = React.useCallback((event) => {
+        if (typeof onDragOver === 'function') {
+            onDragOver({
+                type: 'dragover',
+                nativeEvent: event.nativeEvent,
+                reactEvent: event,
+                dataset: dataset
+            });
+        }
+    }, [onDragOver, dataset]);
+    const onRowDrop = React.useCallback((event) => {
+        if (typeof onDrop === 'function') {
+            onDrop({
+                type: 'drop',
+                nativeEvent: event.nativeEvent,
+                reactEvent: event,
+                dataset: dataset
+            });
+        }
+    }, [onDrop, dataset]);
+    const onRowDragEnd = React.useCallback((event) => {
+        if (typeof onDragEnd === 'function') {
+            onDragEnd({
+                type: 'dragend',
+                nativeEvent: event.nativeEvent,
+                reactEvent: event,
+                dataset: dataset
+            });
+        }
+    }, [onDragEnd, dataset]);
     const renderLogoFallback = React.useCallback(() => (
         <Icon className={styles['icon']} name={'addons'} />
     ), []);
     return (
-        <Button className={classnames(className, styles['addon-container'])} onKeyDown={onKeyDown} onClick={onOpenClick}>
+        <Button
+            className={classnames(className, styles['addon-container'], { [styles['dragging']]: dragging, [styles['drop-target']]: dropTarget })}
+            draggable={reorderable === true}
+            onKeyDown={onKeyDown}
+            onClick={onOpenClick}
+            onDragStart={onRowDragStart}
+            onDragOver={onRowDragOver}
+            onDrop={onRowDrop}
+            onDragEnd={onRowDragEnd}
+        >
+            {
+                reorderable === true ?
+                    <div className={styles['reorder-container']} onKeyDown={onReorderKeyDown} onMouseDownCapture={onReorderMouseDownCapture}>
+                        <button
+                            type={'button'}
+                            className={styles['move-button']}
+                            title={t('ADDON_MOVE_UP', { defaultValue: 'Move up' })}
+                            aria-label={t('ADDON_MOVE_UP', { defaultValue: 'Move up' })}
+                            disabled={!canMoveUp}
+                            onClick={onMoveUpClick}
+                        >
+                            <Icon className={styles['icon']} name={'chevron-up'} />
+                        </button>
+                        <div className={styles['drag-handle']} title={t('ADDON_DRAG_TO_REORDER', { defaultValue: 'Drag to reorder' })} aria-hidden={true}>
+                            <Icon className={styles['icon']} name={'drag-handle'} />
+                        </div>
+                        <button
+                            type={'button'}
+                            className={styles['move-button']}
+                            title={t('ADDON_MOVE_DOWN', { defaultValue: 'Move down' })}
+                            aria-label={t('ADDON_MOVE_DOWN', { defaultValue: 'Move down' })}
+                            disabled={!canMoveDown}
+                            onClick={onMoveDownClick}
+                        >
+                            <Icon className={styles['icon']} name={'chevron-down'} />
+                        </button>
+                    </div>
+                    :
+                    null
+            }
             <div className={styles['logo-container']}>
                 <Image
                     className={styles['logo']}
@@ -156,12 +269,23 @@ Addon.propTypes = {
         p2p: PropTypes.bool,
     }),
     installed: PropTypes.bool,
+    reorderable: PropTypes.bool,
+    canMoveUp: PropTypes.bool,
+    canMoveDown: PropTypes.bool,
+    dragging: PropTypes.bool,
+    dropTarget: PropTypes.bool,
     onToggle: PropTypes.func,
     onInstall: PropTypes.func,
     onUninstall: PropTypes.func,
     onConfigure: PropTypes.func,
     onOpen: PropTypes.func,
     onShare: PropTypes.func,
+    onMoveUp: PropTypes.func,
+    onMoveDown: PropTypes.func,
+    onDragStart: PropTypes.func,
+    onDragOver: PropTypes.func,
+    onDrop: PropTypes.func,
+    onDragEnd: PropTypes.func,
     dataset: PropTypes.object
 };
 
