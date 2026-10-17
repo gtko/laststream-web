@@ -7,12 +7,15 @@ const classnames = require('classnames');
 const { useCore } = require('stremio/core');
 const { useContentGamepadNavigation } = require('stremio/services/GamepadNavigation');
 const { withCoreSuspender, useProfile } = require('stremio/common');
-const { useNavigateWithOrigin } = require('stremio-router');
+const { useNavigateWithOrigin, navigateToRoute, toPath } = require('stremio-router');
 const { HorizontalNavBar, DelayedRenderer, Image, MetaPreview } = require('stremio/components');
 const StreamsList = require('./StreamsList');
 const VideosList = require('./VideosList');
 const { default: LiveTvDetails } = require('./LiveTvDetails');
 const { default: LiveTvPlaceholder } = require('./LiveTvDetails/Placeholder');
+const { default: Fiche } = require('./Fiche');
+const { useLastAddon } = require('stremio/common/lastAddon');
+const { default: getMetaDetailsHref } = require('stremio/common/getMetaDetailsHref');
 const useMetaDetails = require('./useMetaDetails');
 const useSeason = require('./useSeason');
 const { default: useExternalPlayerCallback } = require('./useExternalPlayerCallback');
@@ -42,6 +45,9 @@ const MetaDetails = () => {
         return profile.addons.some((addon) => addon.transportUrl === metaAddonUrl && addon.manifest.behaviorHints?.epgProvider === true);
     }, [profile.addons, metaAddonUrl]);
     const isLiveMeta = isEpgProvider && readyMeta !== null && (readyMeta.behaviorHints?.isLive === true || readyMeta.type === 'tv');
+    const lastAddon = useLastAddon();
+    const ficheMode = lastAddon.configured && readyMeta !== null && !isLiveMeta;
+    const deepLinks = readyMeta?.deepLinks;
     useExternalPlayerCallback(urlParams, metaDetails);
     const [season, setSeason] = useSeason(urlParams);
     const [metaPath, streamPath] = React.useMemo(() => {
@@ -128,6 +134,18 @@ const MetaDetails = () => {
             : url.replace(encodeURIComponent(urlParams.videoId), searchVideoHash);
         navigate(searchVideoPath, { replace: true });
     }, [urlParams, location]);
+    // Lecture de la fiche : sans flux choisi, ouvre la liste des sources du lien par défaut du core.
+    // Lot 4 remplacera ce comportement par le lancement du lecteur.
+    const handleFichePlay = React.useCallback(() => {
+        if (streamPath !== null) {
+            return;
+        }
+
+        const href = getMetaDetailsHref(deepLinks);
+        if (typeof href === 'string') {
+            navigateToRoute(navigate, location, toPath(href));
+        }
+    }, [streamPath, deepLinks, navigate, location]);
     const renderBackgroundImageFallback = React.useCallback(() => null, []);
     const renderBackground = React.useMemo(() => !!(
         metaPath &&
@@ -171,6 +189,40 @@ const MetaDetails = () => {
                     originPath={originPath}
                 />
             </LiveTvDetails>
+        );
+    }
+    if (ficheMode) {
+        return (
+            <div className={styles['metadetails-container']}>
+                <HorizontalNavBar
+                    className={styles['nav-bar']}
+                    backButton={true}
+                    fullscreenButton={true}
+                    navMenu={true}
+                    originPath={originPath}
+                />
+                <Fiche
+                    containerRef={contentRef}
+                    meta={readyMeta}
+                    season={season}
+                    onSeasonSelect={setSeason}
+                    resumeVideoId={metaDetails.libraryItem?.state?.video_id ?? null}
+                    inLibrary={readyMeta.inLibrary}
+                    onToggleLibrary={readyMeta.inLibrary ? removeFromLibrary : addToLibrary}
+                    onPlay={handleFichePlay}
+                    sources={streamPath !== null ?
+                        <StreamsList
+                            streams={metaDetails.streams}
+                            video={video}
+                            type={streamPath.type}
+                            externalPlayerCallbackCanMarkWatched={externalPlayerCallbackCanMarkWatched}
+                            onEpisodeSearch={handleEpisodeSearch}
+                        />
+                        :
+                        null
+                    }
+                />
+            </div>
         );
     }
     return (
