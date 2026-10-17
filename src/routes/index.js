@@ -12,9 +12,15 @@ const Search = require('./Search');
 const { default: Settings } = require('./Settings');
 const Player = require('./Player');
 const Intro = require('./Intro');
+const Person = require('./Person').default;
+const Services = require('./Services').default;
+const TvLive = require('./TvLive').default;
 
 module.exports = {
     Addons,
+    Person,
+    Services,
+    TvLive,
     Board,
     Discover,
     Library,

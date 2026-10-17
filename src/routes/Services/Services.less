@@ -1,0 +1,285 @@
+// Copyright (C) 2017-2026 Smart code 203358507
+
+@import (reference) '~stremio/common/screen-sizes.less';
+
+.services-container {
+    .services-content {
+        width: 100%;
+        height: 100%;
+        overflow-x: hidden;
+        overflow-y: auto;
+        padding: 1.5rem 1.5rem 3rem;
+        box-sizing: border-box;
+        color: var(--primary-foreground-color);
+    }
+
+    .services-page {
+        display: flex;
+        flex-direction: column;
+        gap: 2rem;
+        outline: none;
+    }
+
+    .page-head,
+    .service-head {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .service-head {
+        flex-direction: row;
+        align-items: center;
+        gap: 1.5rem;
+        padding: 1.5rem;
+        border-radius: var(--border-radius);
+        background: linear-gradient(135deg, var(--svc, var(--overlay-color)), var(--overlay-color));
+    }
+
+    .service-head-text {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        min-width: 0;
+    }
+
+    .service-logo {
+        flex: none;
+        width: 6rem;
+        height: 6rem;
+        object-fit: contain;
+        border-radius: var(--border-radius);
+        background-color: #fff;
+        padding: 0.5rem;
+        box-sizing: border-box;
+    }
+
+    .eyebrow {
+        font-size: 0.875rem;
+        color: var(--secondary-foreground-color);
+    }
+
+    .page-title {
+        font-size: 2rem;
+        font-weight: 500;
+        outline: none;
+    }
+
+    .message {
+        margin: 3rem auto;
+        text-align: center;
+        color: var(--secondary-foreground-color);
+    }
+
+    .message[role='alert'] {
+        color: var(--danger-accent-color);
+    }
+
+    .back-button {
+        margin-top: 1rem;
+        padding: 0.5rem 1rem;
+        border-radius: var(--border-radius);
+        background-color: var(--overlay-color);
+    }
+
+    .cta {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+        max-width: 36rem;
+        margin: 3rem auto;
+        padding: 2rem;
+        border-radius: var(--border-radius);
+        background-color: var(--overlay-color);
+        text-align: center;
+
+        .cta-title {
+            font-size: 1.5rem;
+            font-weight: 500;
+        }
+
+        .cta-text {
+            color: var(--secondary-foreground-color);
+        }
+
+        .cta-button {
+            padding: 0.75rem 1.5rem;
+            border-radius: var(--border-radius);
+            background-color: var(--primary-accent-color);
+            color: var(--primary-accent-foreground-color);
+        }
+    }
+
+    .services-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+        gap: 1rem;
+    }
+
+    .service-tile {
+        display: block;
+        border-radius: var(--border-radius);
+        overflow: hidden;
+
+        .service-tile-inner {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 7rem;
+            padding: 1rem;
+            box-sizing: border-box;
+            background-color: var(--svc, var(--overlay-color));
+            border-radius: var(--border-radius);
+            transition: transform 0.15s ease-out;
+
+            img {
+                max-width: 100%;
+                max-height: 100%;
+                object-fit: contain;
+            }
+        }
+
+        .service-name {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        &.outline .service-tile-inner {
+            border: 2px solid var(--primary-foreground-color);
+        }
+
+        &:hover .service-tile-inner,
+        &:focus-visible .service-tile-inner {
+            transform: scale(1.03);
+        }
+    }
+
+    .pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .pill {
+        padding: 0.4rem 0.9rem;
+        border-radius: 999px;
+        background-color: var(--overlay-color);
+        color: var(--secondary-foreground-color);
+
+        &.selected {
+            background-color: var(--primary-accent-color);
+            color: var(--primary-accent-foreground-color);
+        }
+    }
+
+    .rows {
+        display: flex;
+        flex-direction: column;
+        gap: 2rem;
+    }
+
+    .row-section {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        min-width: 0;
+    }
+
+    .section-title {
+        font-size: 1.25rem;
+        font-weight: 500;
+    }
+
+    .row {
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: 10rem;
+        gap: 1rem;
+        overflow-x: auto;
+        padding-bottom: 0.5rem;
+    }
+
+    .row-message {
+        color: var(--secondary-foreground-color);
+    }
+
+    .catalog-skeleton {
+        height: 15rem;
+        border-radius: var(--border-radius);
+        background-color: var(--overlay-color);
+    }
+
+    .catalog-card {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+        min-width: 0;
+        padding: 0;
+        background: none;
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+
+        &.busy {
+            opacity: 0.6;
+        }
+
+        &:focus-visible {
+            outline: var(--focus-outline-size) solid var(--primary-accent-color);
+        }
+
+        .catalog-poster {
+            width: 100%;
+            aspect-ratio: 2 / 3;
+            border-radius: var(--border-radius);
+            overflow: hidden;
+            background-color: var(--overlay-color);
+        }
+
+        .catalog-poster-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .catalog-poster-fallback {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--secondary-foreground-color);
+        }
+
+        .catalog-name {
+            font-weight: 500;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .catalog-failed {
+            font-size: 0.8rem;
+            color: var(--danger-accent-color);
+        }
+    }
+}
+
+@media only screen and (max-width: @minimum) {
+    .services-container {
+        .services-content {
+            padding: 1rem;
+        }
+
+        .service-head {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .row {
+            grid-auto-columns: 8.5rem;
+        }
+    }
+}

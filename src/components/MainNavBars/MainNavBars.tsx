@@ -12,6 +12,8 @@ const TABS = [
     { id: 'library', label: 'Library', icon: 'library', href: '/library' },
     { id: 'stats', label: 'Stats', icon: 'play', href: '/stats' },
     { id: 'calendar', label: 'Calendar', icon: 'calendar', href: '/calendar' },
+    { id: 'tvlive', label: 'TV en direct', icon: 'tv', href: '/tv-live' },
+    { id: 'services', label: 'Services', icon: 'movies', href: '/services' },
     { id: 'addons', label: 'ADDONS', icon: 'addons', href: '/addons' },
     { id: 'settings', label: 'SETTINGS', icon: 'settings', href: '/settings' },
 ];

@@ -346,6 +346,99 @@ describe('routesRegexp', () => {
         });
     });
 
+    describe('person route regexp', () => {
+        it('match /person/1', async () => {
+            expect(Array.from('/person/1'.match(routesRegexp.person.regexp)))
+                .toEqual(['/person/1', '1']);
+        });
+
+        it('match /person/287', async () => {
+            expect(Array.from('/person/287'.match(routesRegexp.person.regexp)))
+                .toEqual(['/person/287', '287']);
+        });
+
+        it('not match /person', async () => {
+            expect('/person'.match(routesRegexp.person.regexp))
+                .toBe(null);
+        });
+
+        it('not match /person/', async () => {
+            expect('/person/'.match(routesRegexp.person.regexp))
+                .toBe(null);
+        });
+
+        it('not match /person/1/', async () => {
+            expect('/person/1/'.match(routesRegexp.person.regexp))
+                .toBe(null);
+        });
+
+        it('not match /person/1/2', async () => {
+            expect('/person/1/2'.match(routesRegexp.person.regexp))
+                .toBe(null);
+        });
+    });
+
+    describe('services route regexp', () => {
+        it('match /services', async () => {
+            expect(Array.from('/services'.match(routesRegexp.services.regexp)))
+                .toEqual(['/services']);
+        });
+
+        it('not match /services/', async () => {
+            expect('/services/'.match(routesRegexp.services.regexp))
+                .toBe(null);
+        });
+
+        it('not match /services/netflix', async () => {
+            expect('/services/netflix'.match(routesRegexp.services.regexp))
+                .toBe(null);
+        });
+    });
+
+    describe('service route regexp', () => {
+        it('match /service/netflix', async () => {
+            expect(Array.from('/service/netflix'.match(routesRegexp.service.regexp)))
+                .toEqual(['/service/netflix', 'netflix']);
+        });
+
+        it('match /service/prime-video', async () => {
+            expect(Array.from('/service/prime-video'.match(routesRegexp.service.regexp)))
+                .toEqual(['/service/prime-video', 'prime-video']);
+        });
+
+        it('not match /service', async () => {
+            expect('/service'.match(routesRegexp.service.regexp))
+                .toBe(null);
+        });
+
+        it('not match /service/', async () => {
+            expect('/service/'.match(routesRegexp.service.regexp))
+                .toBe(null);
+        });
+
+        it('not match /service/netflix/extra', async () => {
+            expect('/service/netflix/extra'.match(routesRegexp.service.regexp))
+                .toBe(null);
+        });
+    });
+
+    describe('tvlive route regexp', () => {
+        it('match /tv-live', async () => {
+            expect(Array.from('/tv-live'.match(routesRegexp.tvlive.regexp)))
+                .toEqual(['/tv-live']);
+        });
+
+        it('not match /tv-live/', async () => {
+            expect('/tv-live/'.match(routesRegexp.tvlive.regexp))
+                .toBe(null);
+        });
+
+        it('not match /tv-live/1', async () => {
+            expect('/tv-live/1'.match(routesRegexp.tvlive.regexp))
+                .toBe(null);
+        });
+    });
+
     describe('player route regexp', () => {
         it('not match /player', async () => {
             expect('/player'.match(routesRegexp.player.regexp))

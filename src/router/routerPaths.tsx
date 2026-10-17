@@ -61,6 +61,26 @@ export default [
         element: <routes.Settings />,
     },
     {
+        path: '/person/:id',
+        view: 2,
+        element: <routes.Person />,
+    },
+    {
+        path: '/services',
+        view: 1,
+        element: <routes.Services />,
+    },
+    {
+        path: '/service/:slug',
+        view: 1,
+        element: <routes.Services />,
+    },
+    {
+        path: '/tv-live',
+        view: 1,
+        element: <routes.TvLive />,
+    },
+    {
         path: PLAYER_PATH,
         view: 4,
         element: <routes.Player />,

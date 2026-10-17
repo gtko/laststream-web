@@ -45,6 +45,22 @@ const routesRegexp = {
         regexp: /^\/settings$/,
         urlParamsNames: []
     },
+    person: {
+        regexp: /^\/person\/([^/]+)$/,
+        urlParamsNames: ['id']
+    },
+    services: {
+        regexp: /^\/services$/,
+        urlParamsNames: []
+    },
+    service: {
+        regexp: /^\/service\/([^/]+)$/,
+        urlParamsNames: ['slug']
+    },
+    tvlive: {
+        regexp: /^\/tv-live$/,
+        urlParamsNames: []
+    },
     player: {
         regexp: /^\/player\/([^/]*)(?:\/([^/]*)\/([^/]*)\/([^/]*)\/([^/]*)\/([^/]*))?$/,
         urlParamsNames: ['stream', 'streamTransportUrl', 'metaTransportUrl', 'type', 'id', 'videoId']
