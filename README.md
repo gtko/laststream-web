@@ -2,9 +2,9 @@
 
 <img src="/assets/images/stremio_symbol.png" width="90" alt="Stremio logo">
 
-# Stremio Web
+# Laststream
 
-**Freedom to Stream** — the official web UI of [Stremio](https://www.stremio.com), a modern media center that's a one-stop solution for your video entertainment.
+**Laststream, a fork of Stremio Web** — **Freedom to Stream**. Built from the official web UI of [Stremio](https://www.stremio.com), a modern media center that's a one-stop solution for your video entertainment.
 
 [![Build](https://github.com/Stremio/stremio-web/actions/workflows/build.yml/badge.svg)](https://github.com/Stremio/stremio-web/actions/workflows/build.yml)
 [![Github Page](https://img.shields.io/website?label=Page&logo=github&up_message=online&down_message=offline&url=https%3A%2F%2Fstremio.github.io%2Fstremio-web%2F)](https://stremio.github.io/stremio-web/development)
